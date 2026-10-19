@@ -1,0 +1,2 @@
+import tseslint from 'typescript-eslint';
+export default tseslint.config({files:['src/**/*.ts','src/**/*.tsx','tests/**/*.ts'],languageOptions:{parser:tseslint.parser},plugins:{'@typescript-eslint':tseslint.plugin},rules:{'no-debugger':'error','no-constant-condition':'error','no-duplicate-case':'error','no-unreachable':'error','no-unsafe-finally':'error','no-sparse-arrays':'error','@typescript-eslint/no-explicit-any':'error'}});

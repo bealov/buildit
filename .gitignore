@@ -1,0 +1,7 @@
+node_modules/
+dist/
+tests/.render-app.mjs
+tests/.model.mjs
+*.tar.gz
+.env*
+!.env.example
