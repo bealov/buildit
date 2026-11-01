@@ -1,28 +1,28 @@
-# Raport de verificare BuildIT
+# Verificare BuildIT — actualizare 27 octombrie 2026
 
-Data: 19 octombrie 2026.
+## Verificări automate
 
-## Executat
+- 30 teste ale regulilor: trecute.
+- 63 verificări de randare server (21 rute × Creator/Investitor/vizitator): trecute.
+- Verificări suplimentare de randare: raportul nou, lipsa casetei de text și a rezultatelor financiare automate, profilul Ritmo în toate paginile relevante, interzicerea rutelor de editare/vânzare/promovare/analiză pentru proiectul lui Alex, separarea Sponsorizat/organic, Marketplace și Clasament în navigare, Link adițional, lipsa secvenței literale backslash-n.
+- TypeScript strict și build Vite sunt executate ca poartă obligatorie la împachetare; arhiva nu este publicată dacă eșuează.
 
-- ESLint (reguli pentru erori evidente și tipare nesigure): trecut.
-- TypeScript strict (`tsc --noEmit`): trecut.
-- Build Vite pentru producție: trecut.
-- 24 teste automate ale regulilor de business: trecute, 0 eșecuri.
-- 63 verificări de randare server (21 rute × Creator / Investitor / vizitator): trecute. Verifică faptul că paginile se pot construi fără excepții în randare și fără NaN în conținut.
+Teste de regresie importante: Ritmo nu poate reasigna, modifica, vinde sau promova proiectul lui Alex; încercarea de a indica un alt actor fără schimbarea contului este respinsă; Match confirmat acordă acces la documentul proiectului inclusiv pentru date vechi shareDoc=false; accesul nu deblochează Marketplace și nu transferă proprietatea; datele neestimate rămân distincte de zero după serializare; scorul organic rămâne neschimbat de estimări și Boost.
 
-Testele de business acoperă: integritatea setului de 18 proiecte, ownership, creare/editare/publicare/ciornă, independența preferințelor, matching reciproc și respingeri, ascunderea contactelor înainte de confirmare și după logout, formule financiare normale și limite, proiecții, serializare JSON, separarea Boost de clasament, expirare, acces Marketplace, stări eșuate/anulate și prevenirea cumpărărilor duplicate.
+## Limite
 
-## Limita testelor
+În revizia precedentă nu a fost disponibil instrumentul de control al browserului. Verificările desktop din revizia finală sunt descrise mai jos; nu au fost executate teste pe dispozitive mobile reale. Randarea server nu testează selectarea fișierelor, IndexedDB, descărcarea, focusul ori persistența efectivă după refresh. Uploadul și raportul exemplificativ nu reprezintă analiză AI reală.
 
-Randarea server nu este testare de browser și nu execută interacțiunile React sau efectele. Verificarea JSON nu dovedește persistența reală într-un browser. Testele nu dovedesc funcționarea completă prin click a fluxurilor UI.
+Pentru verificare manuală: încărcare PDF/DOCX → salvare → refresh → schimbare cont → Match/cumpărare → descărcare; respingerea fișierelor prea mari sau cu extensii invalide; cele șase butoane de navigare la 360 px; modificarea unei cifre și alternarea între 0/Neestimat; resetarea datelor și fișierelor.
 
-Nu s-au executat verificări vizuale pe telefon, gesturi tactile, focus/keyboard în browser, contrast cu instrument automat sau un flux complet end-to-end. Mediul de lucru nu oferă skill-ul de control browser necesar pentru preview-ul Sites; nu a fost pornit un preview improvizat. CSS include viewport mobil, safe-area, layout adaptiv și reduced motion, dar acestea necesită verificare pe dispozitive reale.
+## Ultima revizie — 27 octombrie 2026
 
-## Verificare manuală recomandată înainte de prezentare
+TypeScript și build Vite verificate. Testele de reguli și randare includ rutele noi de publicare/administrare Marketplace, izolarea proprietarului, lipsa Smart Analysis din home Investitor, un singur card Creator și feedback pentru date necompletate.
 
-- Deschideți linkul în Safari/iPhone și Chrome/Android la 360–430 px.
-- Parcurgeți traseul din README: ciornă → refresh → publicare → analiză → interes → schimbare rol → acceptare → document.
-- Verificați că glisarea nu deschide involuntar cardul, că butoanele alternative sunt utilizabile și că modalurile nu ies din ecran.
-- Verificați checkout anulat/eșuat/reușit, profilul și vizibilitatea contactelor, apoi resetați demo-ul.
+Verificări manuale în browser desktop pe preview: alegere cont Creator, trecere la următorul creator, deschidere proiect și revenire la același card cu Înapoi, tab conexiuni investitori, formular nou cu opt bife debifate/câmpuri goale, salvarea unei sume cu virgulă și a unui zero, bifare explicită a unui cost neestimat, sortare descrescătoare, acces direct la alegerea proiectului pentru Marketplace și aspectul compact Sponsored.
 
-Actualizare: 5 teste suplimentare Creator–Creator trecute: confirmare reciprocă, ownership, eligibilitate, duplicate, tipuri independente, compatibilitate cu datele salvate și vizibilitatea contactelor. Lint, TypeScript, build și cele 63 verificări de randare au trecut după modificare. Testarea interactivă în browser rămâne neexecutată.
+Limite: nu s-a verificat gestul tactil pe dispozitiv mobil real; upload/download IndexedDB nu a fost repetat în această revizie. AI și plățile rămân demonstrative.
+
+## Marketplace independent — 1 noiembrie 2026
+
+Build TypeScript/Vite și 31 teste de reguli trecute. Test nou: Creator fără proiecte poate crea/retrage ofertă independentă; alt Creator nu o poate prelua; cumpărarea deblochează documentul după confirmare. Randare server verificată pentru catalog, detalii, publicare, editare, administrare și istoric de cumpărări/vânzări, fără proiect asociat. Uploadul și descărcarea în browser nu au fost retestate în această revizie.
