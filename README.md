@@ -9,8 +9,12 @@ Necesită Node.js 22.6+ (recomandat 24) pentru testele TypeScript (`--experiment
 ```sh
 npm ci
 npx vite --host 0.0.0.0
-npm test
+npm test          # reguli, randare demo și conturi reale (fără rețea)
+npm run lint
 npm run build
+npm run test:db   # migrarea și RLS pe un Postgres local temporar (necesită Postgres 15+)
+npm run test:e2e  # browser (Playwright/Chromium) cu un server Supabase simulat local
+npm run test:remote  # două conturi pe buildit-dev; doar după configurare (vezi docs/)
 ```
 
 Build: `dist`. Pentru Vercel: importați sursa, preset Vite, build `npm run build`, output `dist`. Configurația este în `vercel.json` (și `netlify.toml` pentru Netlify). Rutele folosesc hash și funcționează pe hosting static, fără rescrieri de rute.
@@ -53,7 +57,7 @@ Cardul Sponsorizat apare deasupra listei organice, fără poziție. Selecția fo
 
 Poza de profil acceptă JPG/PNG/WebP de maximum 5 MB, cu miniatură locală de 256 × 256 px. „Link adițional” are explicația LinkedIn/portofoliu/site web. Titlurile normalizează secvențele literale `\n`.
 
-Starea este păstrată în localStorage (`buildit-demo-v1`), iar documentele în IndexedDB (`buildit-files`). Datele vechi sunt păstrate, fără resetare la actualizare. Nu există autentificare, plăți, investiții, AI real sau mesagerie. Pentru un produs real sunt necesare backend, autorizare server, storage privat și integrarea explicită a serviciilor respective.
+Starea demo este păstrată în localStorage (`buildit-demo-v1`), iar documentele în IndexedDB (`buildit-files`). Datele vechi sunt păstrate, fără resetare la actualizare. În modul demo nu există autentificare, plăți, investiții, AI real sau mesagerie. Conturile reale (etapa 1, mai jos) acoperă deocamdată doar autentificarea, profilurile, fotografiile și rolurile.
 
 ## Traseu de demonstrație
 
@@ -77,3 +81,19 @@ Proiectele noi pornesc cu câmpuri financiare goale și bife debifate. `unfilled
 ## Marketplace independent — 1 noiembrie 2026
 
 Un Creator poate vinde planuri fără niciun proiect pentru Match. Ofertele au proprietar și categorie proprii; asocierea cu un proiect este opțională. Publicarea nu creează proiecte și nu înscrie planul în Match sau în clasamentul proiectelor. Ofertele vechi își păstrează proprietarul și categoria din proiectul asociat. Documentele cumpărate sunt accesate după ID-ul ofertei, separat de documentele Match. Administrarea și istoricul vânzărilor includ ofertele independente.
+
+## Conturi reale — etapa 1 (2 noiembrie 2026)
+
+Autentificare și profiluri reale cu Supabase, **doar pentru mediul de test** (proiectul `buildit-dev`, local și Vercel Preview). Producția rămâne demo: fără variabilele de mai jos, aplicația funcționează exact ca prototipul, iar biblioteca Supabase nu este descărcată.
+
+- **Activare:** `VITE_ENABLE_REAL_ACCOUNTS=true`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY` (vezi `.env.example`). Variabila de activare controlează doar interfața; protecția datelor vine din permisiunile și regulile RLS din baza de date. O cheie secretă configurată din greșeală este refuzată.
+- **Intrare:** în fereastra **Demo**, opțiunea **Cont real · mediu de test**. Contul real și modul demo sunt separate: nu se importă date demo, iar selectorul de conturi demo nu schimbă identitatea reală.
+- **Cont:** înregistrare cu email și parolă (minimum 10 caractere), confirmarea emailului, autentificare, deconectare, resetarea parolei, sesiune păstrată după reîncărcare. Linkurile din email se întorc cu `?code=…` sau `?token_hash=…`, compatibil cu rutele `#hash`.
+- **Roluri:** la înregistrare se alege rolul inițial (Creator sau Investitor); al doilea rol se activează din Profil/Setări. Comutatorul „Mod Creator / Mod Investitor” apare doar cu ambele roluri active și schimbă doar interfața. Activarea rolului Investitor nu înseamnă investitor verificat. Rolurile sunt verificate în baza de date; nu există roluri administrative.
+- **Profil:** public pentru utilizatorii autentificați (nume, fotografie, descriere, oraș, companie, industrie, obiective). Privat: emailul contului, linkul adițional, preferințele de afișare a contactului (implicit ascunse) și preferințele de investitor. Fotografia este într-un bucket privat și se afișează prin linkuri temporare.
+- **Conturi fără profil** (de exemplu create din Dashboard): flux „Completează profilul”, fără nume sau rol inventat.
+- **Module neimplementate** pentru conturile reale (Proiecte, Explore, Match, Marketplace, Clasament): explicație scurtă și acces la demo. La deconectare sau schimbarea contului, datele contului precedent sunt eliminate din interfață.
+
+Fișiere: `supabase/migrations/20261102000000_profiles_and_roles.sql`, `src/real/*`, `src/entry.tsx`. Ghiduri: [docs/etapa-1-conturi-reale.md](docs/etapa-1-conturi-reale.md) (migrare, conturi de test, Vercel Preview, verificarea cu două conturi) și [docs/etapa-1-email.md](docs/etapa-1-email.md) (SMTP, șabloane, adrese de redirecționare).
+
+Dependențe pentru etapele următoare: proiectele, ofertele Marketplace, achizițiile și Match-ul vor folosi `profiles.id` ca proprietar și `profile_roles` pentru drepturi; afișarea contactului după Match va citi preferințele din `profiles_private` printr-o funcție care verifică Match-ul confirmat. Match-ul cu propriile proiecte și cumpărarea propriilor planuri vor fi interzise în baza de date.

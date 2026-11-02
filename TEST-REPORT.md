@@ -26,3 +26,35 @@ Limite: nu s-a verificat gestul tactil pe dispozitiv mobil real; upload/download
 ## Marketplace independent — 1 noiembrie 2026
 
 Build TypeScript/Vite și 31 teste de reguli trecute. Test nou: Creator fără proiecte poate crea/retrage ofertă independentă; alt Creator nu o poate prelua; cumpărarea deblochează documentul după confirmare. Randare server verificată pentru catalog, detalii, publicare, editare, administrare și istoric de cumpărări/vânzări, fără proiect asociat. Uploadul și descărcarea în browser nu au fost retestate în această revizie.
+
+## Conturi reale — etapa 1 · 2 noiembrie 2026
+
+Mediu: Node 22.23.4, npm 10.9.9, Postgres 16 local, Chromium (Playwright). Nicio verificare nu a folosit proiectul Supabase găzduit.
+
+### Executate și trecute
+
+| Comandă | Rezultat |
+|---|---|
+| `npm run lint` | 0 erori |
+| `npm run build` | TypeScript strict și Vite reușite; Supabase este într-un fișier separat, încărcat doar când conturile reale sunt configurate |
+| `npm test` | 44/44 teste (31 existente + 13 noi), 63 verificări de randare demo, 299 verificări de randare pentru conturile reale |
+| `npm run test:db` | 75/75 verificări ale migrării, rulate de două ori: cu expunerea automată a tabelelor dezactivată (ca în buildit-dev) și activată; migrarea poate fi aplicată de două ori fără erori |
+| `npm run test:e2e` | 14/14 pași în Chromium, cu server Supabase **simulat** local |
+
+**Baza de date (`test:db`)**, pe un Postgres local care imită schemele `auth` și `storage` din Supabase, cu cinci conturi: profilul se creează automat doar cu nume și rol valide (fără profil pentru metadate lipsă, rol `admin` sau nume gol); vizitatorii nu pot citi profiluri, date private, roluri sau fotografii; A nu poate modifica profilul, datele private, rolurile sau fotografia lui B (0 rânduri sau eroare); A nu poate schimba `id`, `created_at`, `activated_at`, nu poate crea sau șterge profiluri, nu poate activa `admin` sau „investitor verificat”; A nu poate încărca în folderul lui B, alt nume de fișier sau alt bucket; utilizatorii autentificați văd fotografiile celorlalți (aliniat cu vizibilitatea profilurilor); linkuri `javascript:` și bugete min > max respinse; completarea profilului funcționează o singură dată; ștergerea contului elimină profilul; datele lui B rămân neschimbate după încercările lui A.
+
+**Unitare (`tests/real.test.ts`):** configurare (demo fără variabile, cheie secretă refuzată), linkuri din email (`?code`, `?token_hash`, erori, fragmente vechi `#access_token` care nu devin rute), validări, mesaje de eroare care nu dezvăluie existența unui cont, modul din browser nu acordă roluri și nu se transmite altui cont, cererile sunt limitate la contul curent, coloanele trimise coincid cu `GRANT UPDATE` din migrare.
+
+**Browser (`test:e2e`):** demo neschimbat și intrare în contul real; parolă greșită; autentificare; sesiune păstrată după reîncărcare; editare profil; fotografie încărcată în folderul propriu și afișată prin URL semnat; activarea rolului Investitor și comutarea modului (păstrată după reîncărcare); modulele neimplementate trimit spre demo; selectorul demo nu schimbă contul real; deconectarea elimină datele private din interfață și din browser; contul B fără profil completează profilul și nu vede nimic din A; modul salvat de A nu se aplică lui B; resetarea parolei prin link `?code=…`; link expirat; build-ul fără configurare face zero cereri către API.
+
+### Pregătite, dar încă nerulate
+
+- `npm run test:remote` — două conturi reale pe buildit-dev (după aplicarea migrării și crearea conturilor; vezi `docs/etapa-1-conturi-reale.md`).
+- Verificările de email din `docs/etapa-1-email.md` (după configurarea SMTP, a șabloanelor și a adreselor de redirecționare).
+- Verificarea manuală pe Vercel Preview și pe telefon.
+
+### Limite
+
+- Serverul din `test:e2e` imită API-ul Supabase; regulile reale sunt testate doar în `test:db`, pe o simulare a schemelor Supabase, nu pe serviciul găzduit.
+- Conturile create cu Auto Confirm nu dovedesc funcționarea emailurilor.
+- Limitele de dimensiune și tip de fișier ale bucket-ului sunt aplicate de serviciul Storage găzduit; local s-au verificat doar regulile de acces.

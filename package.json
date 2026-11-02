@@ -4,20 +4,24 @@
   "type": "module",
   "scripts": {
     "build": "tsc --noEmit && vite build",
-    "test": "node --experimental-strip-types --test tests/business.test.ts && node tests/render.mjs",
-    "lint": "eslint src tests/business.test.ts"
+    "test": "node --experimental-strip-types --test tests/business.test.ts tests/real.test.ts && node tests/render.mjs && node tests/real-render.mjs",
+    "test:db": "bash tests/db/run-local.sh",
+    "test:e2e": "node tests/e2e-real.mjs",
+    "test:remote": "node --env-file=.env.local tests/rls-remote.mjs",
+    "lint": "eslint src tests/business.test.ts tests/real.test.ts"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.118.0",
+    "lucide-react": "^0.468.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "lucide-react": "^0.468.0"
+    "react-dom": "^19.0.0"
   },
   "devDependencies": {
-    "typescript": "^5.7.0",
-    "vite": "^6.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "eslint": "^9.0.0",
-    "typescript-eslint": "^8.0.0"
+    "typescript": "^5.7.0",
+    "typescript-eslint": "^8.0.0",
+    "vite": "^6.0.0"
   }
 }
