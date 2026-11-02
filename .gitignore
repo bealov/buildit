@@ -5,3 +5,4 @@ tests/.model.mjs
 *.tar.gz
 .env*
 !.env.example
+tests/.render-real.mjs
