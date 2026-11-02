@@ -4,7 +4,7 @@ Prototip interactiv pentru creatori și investitori, în română. React 19, Typ
 
 ## Rulare și publicare independentă
 
-Necesită Node.js 24 pentru testele TypeScript.
+Necesită Node.js 22.6+ (recomandat 24) pentru testele TypeScript (`--experimental-strip-types`).
 
 ```sh
 npm ci
@@ -13,7 +13,7 @@ npm test
 npm run build
 ```
 
-Build: `dist`. Pentru Vercel: importați sursa, preset Vite, build `npm run build`, output `dist`. Configurația `.openai/hosting.json` este specifică Sites, nu este necesară la Vercel. Arhiva `public/buildit-source.zip` include sursele actualizate, fără dependențe, build sau date locale. Rutele folosesc hash și funcționează pe hosting static. Publicarea în Sites nu actualizează automat o instalare separată în Vercel.
+Build: `dist`. Pentru Vercel: importați sursa, preset Vite, build `npm run build`, output `dist`. Configurația este în `vercel.json` (și `netlify.toml` pentru Netlify). Rutele folosesc hash și funcționează pe hosting static, fără rescrieri de rute.
 
 ## Conturi demo și permisiuni
 
