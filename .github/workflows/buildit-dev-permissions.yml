@@ -1,0 +1,49 @@
+# Verificarea permisiunilor efective pe proiectul Supabase de DEZVOLTARE (buildit-dev),
+# cu două conturi de test. Pornește doar manual: adaugă eticheta „verifica-buildit-dev”
+# pe Pull Request (sau „Re-run jobs” din tab-ul Actions).
+#
+# Datele de acces sunt citite din secretele mediului GitHub „buildit-dev”
+# (Settings → Environments → buildit-dev). Nu se folosește service_role.
+# Scriptul nu afișează emailuri, parole, identificatori sau date din profil.
+name: Permisiuni buildit-dev
+
+on:
+  pull_request:
+    types: [labeled]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: buildit-dev-permissions
+  cancel-in-progress: false
+
+jobs:
+  permissions:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.label.name == 'verifica-buildit-dev' &&
+       github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: buildit-dev
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Verificare cu două conturi (buildit-dev)
+        run: node tests/rls-remote.mjs
+        env:
+          BUILDIT_TEST_TARGET: buildit-dev
+          VITE_SUPABASE_URL: ${{ secrets.BUILDIT_DEV_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.BUILDIT_DEV_PUBLISHABLE_KEY }}
+          BUILDIT_TEST_A_EMAIL: ${{ secrets.BUILDIT_TEST_A_EMAIL }}
+          BUILDIT_TEST_A_PASSWORD: ${{ secrets.BUILDIT_TEST_A_PASSWORD }}
+          BUILDIT_TEST_B_EMAIL: ${{ secrets.BUILDIT_TEST_B_EMAIL }}
+          BUILDIT_TEST_B_PASSWORD: ${{ secrets.BUILDIT_TEST_B_PASSWORD }}

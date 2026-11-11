@@ -118,26 +118,51 @@ npx vite
 
 ## Pasul 4 · Verificarea automată cu două conturi
 
-Scriptul folosește aceeași cheie publishable ca browserul și încearcă operațiuni permise și
-nepermise între contul A și contul B.
+Scriptul `tests/rls-remote.mjs` folosește aceeași cheie publishable ca browserul (fără
+`service_role`, fără dezactivarea RLS) și încearcă operațiuni permise și nepermise între
+contul A și contul B, în ambele direcții.
 
-1. Completează în `.env.local`: `BUILDIT_TEST_A_EMAIL`, `BUILDIT_TEST_A_PASSWORD`,
-   `BUILDIT_TEST_B_EMAIL`, `BUILDIT_TEST_B_PASSWORD` și lasă `BUILDIT_TEST_TARGET=buildit-dev`.
-2. Asigură-te că ambele conturi au profilul completat (pasul 3).
-3. Rulează:
+**Păstrarea datelor.** Încercările asupra celuilalt cont folosesc valori identice cu cele
+existente, deci nu pot schimba nimic nici dacă o regulă ar fi greșită (testul semnalează doar
+că operațiunea a fost permisă). Înainte de teste, scriptul păstrează în memorie profilul, datele
+private, rolurile și fotografia fiecărui cont; la final compară starea și o restaurează dacă e
+nevoie. Nu activează roluri, nu creează conturi și închide doar propriile sesiuni (nu te
+deconectează din browser sau de pe telefon). Singura urmă normală: data ultimei modificări a
+profilului (`updated_at`).
+
+### Varianta din browser (GitHub Actions) — recomandată dacă nu ai mediu local
+
+1. GitHub → repository → **Settings** → **Environments** → **New environment** → nume
+   `buildit-dev` → **Configure environment**.
+2. La **Environment secrets** → **Add environment secret**, adaugă pe rând:
+
+   | Nume | Valoare |
+   |---|---|
+   | `BUILDIT_DEV_SUPABASE_URL` | Project URL din buildit-dev |
+   | `BUILDIT_DEV_PUBLISHABLE_KEY` | cheia `sb_publishable_…` din buildit-dev |
+   | `BUILDIT_TEST_A_EMAIL` / `BUILDIT_TEST_A_PASSWORD` | datele contului de test A |
+   | `BUILDIT_TEST_B_EMAIL` / `BUILDIT_TEST_B_PASSWORD` | datele contului de test B |
+
+3. În Pull Request, adaugă eticheta `verifica-buildit-dev` (o creezi din **Issues → Labels →
+   New label** dacă nu există). Verificarea pornește automat.
+4. Rezultatul apare în tab-ul **Actions** → **Permisiuni buildit-dev**. Pentru o nouă rulare:
+   **Re-run jobs**.
+
+GitHub ascunde automat valorile secretelor din jurnale, iar scriptul nu afișează emailuri,
+identificatori sau date din profil.
+
+### Varianta locală
+
+Completează în `.env.local`: `BUILDIT_TEST_A_EMAIL`, `BUILDIT_TEST_A_PASSWORD`,
+`BUILDIT_TEST_B_EMAIL`, `BUILDIT_TEST_B_PASSWORD` și lasă `BUILDIT_TEST_TARGET=buildit-dev`,
+apoi rulează:
 
 ```bash
 npm run test:remote
 ```
 
-Ce verifică, printre altele: vizitatorii nu pot citi profiluri, roluri sau fotografii; A nu poate
-modifica profilul, datele private sau rolurile lui B; A nu poate activa roluri administrative
-sau „investitor verificat”; A nu poate încărca în folderul de fotografii al lui B; fotografiile
-nu sunt publice, dar sunt vizibile utilizatorilor autentificați prin linkuri temporare; datele
-lui B rămân neschimbate. La final, scriptul readuce profilul lui A la valorile inițiale.
-
-Implicit, scriptul **nu** activează permanent al doilea rol. Pentru a testa și activarea,
-setează `BUILDIT_TEST_ALLOW_ROLE_ACTIVATION=1` (rolul rămâne activ, nu poate fi dezactivat).
+Ambele conturi trebuie să aibă profilul completat. Dacă proiectul Supabase a fost pus pe pauză
+din lipsă de activitate, reactivează-l din Dashboard înainte de rulare.
 
 ---
 

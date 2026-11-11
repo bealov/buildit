@@ -58,3 +58,7 @@ Mediu: Node 22.23.4, npm 10.9.9, Postgres 16 local, Chromium (Playwright). Nicio
 - Serverul din `test:e2e` imită API-ul Supabase; regulile reale sunt testate doar în `test:db`, pe o simulare a schemelor Supabase, nu pe serviciul găzduit.
 - Conturile create cu Auto Confirm nu dovedesc funcționarea emailurilor.
 - Limitele de dimensiune și tip de fișier ale bucket-ului sunt aplicate de serviciul Storage găzduit; local s-au verificat doar regulile de acces.
+
+## De urmărit (notat 11 noiembrie 2026, nemodificat încă)
+
+- Fotografia de profil a contului real apare cu câteva secunde după restul datelor la prima încărcare (laptop și telefon); la revenirea în profil fără reîncărcare apare imediat. Ipoteze de verificat: linkul temporar (semnat) este nou la fiecare încărcare, deci nu poate fi preluat din memoria browserului, iar imaginea se descarcă abia după ce profilul este afișat.
