@@ -59,6 +59,24 @@ Mediu: Node 22.23.4, npm 10.9.9, Postgres 16 local, Chromium (Playwright). Nicio
 - Conturile create cu Auto Confirm nu dovedesc funcționarea emailurilor.
 - Limitele de dimensiune și tip de fișier ale bucket-ului sunt aplicate de serviciul Storage găzduit; local s-au verificat doar regulile de acces.
 
+## Verificare pe buildit-dev cu două conturi · 11 noiembrie 2026
+
+Executată pe proiectul Supabase **găzduit** buildit-dev, prin GitHub Actions („Permisiuni buildit-dev”, [rularea 43034933535](https://github.com/bealov/buildit/actions/runs/43034933535), commit `628eeb1`), cu cheia publishable și două conturi de test (fără `service_role`, RLS activ).
+
+**Rezultat: 55 trecute, 0 eșuate, 0 omise.**
+
+- Vizitator neautentificat: nu poate citi profiluri, date private sau roluri, nu poate apela `complete_profile`, nu poate lista fotografiile și nu poate obține linkuri pentru ele; fotografiile nu sunt publice.
+- În ambele direcții (A→B, B→A): profilul public este vizibil fără email, rolurile sunt vizibile, fotografia este vizibilă prin link temporar; datele private ale celuilalt nu sunt vizibile; profilul, datele private, rolurile și fotografia celuilalt nu pot fi modificate sau șterse; un cont nu își poate seta fotografia celuilalt.
+- Roluri nepermise refuzate pentru ambele conturi: `admin`, `verified_investor`, `service_role`; al doilea profil prin `complete_profile` refuzat.
+- Operațiile proprietarului: salvarea profilului și a datelor private, regula de adăugare a rolurilor proprii (verificată fără activare), încărcarea propriei fotografii; bucket-ul refuză alte tipuri de fișiere și fișiere peste 1 MB.
+- Verificarea finală: profilul, datele private, rolurile și fotografia ambelor conturi au rămas neschimbate (singura urmă: `updated_at`).
+
+Avertismentele din rulare (acțiuni pe Node.js 20, deprecările `punycode` și `url.parse()` din `actions/setup-node`) nu au afectat rezultatul. Workflow-ul a fost actualizat la `actions/checkout` v7.0.1 și `actions/setup-node` v7.1.0 (Node.js 24, fixate prin commit), fără cache npm.
+
+Verificări manuale raportate pe buildit-dev (Vercel Preview, laptop și telefon): autentificare cu două conturi, profil păstrat după reîncărcare, încărcarea și păstrarea fotografiei, activarea ambelor roluri și comutarea modului, păstrarea fotografiei și rolurilor după deconectare și reconectare.
+
+Neverificate încă: emailurile de confirmare și resetare (conturile de test au fost create cu Auto Confirm).
+
 ## De urmărit (notat 11 noiembrie 2026, nemodificat încă)
 
 - Fotografia de profil a contului real apare cu câteva secunde după restul datelor la prima încărcare (laptop și telefon); la revenirea în profil fără reîncărcare apare imediat. Ipoteze de verificat: linkul temporar (semnat) este nou la fiecare încărcare, deci nu poate fi preluat din memoria browserului, iar imaginea se descarcă abia după ce profilul este afișat.
