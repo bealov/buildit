@@ -4,13 +4,14 @@ import React,{useEffect,useState,type ReactNode} from 'react';
 import {Home,Compass,Layers,Heart,ShoppingBag,Trophy,User,ChevronLeft,ArrowUpRight,ArrowRight,Check,LogOut,SlidersHorizontal,Sparkles} from 'lucide-react';
 import {Button,Heading,Section,Empty,Modal,Field,Toggle} from '../ui';
 import {Avatar,PhotoEditor,forgetPhotoOriginal} from '../ProfilePhoto';
+import {ParticipationFields,ParticipationSummary,PARTICIPATION_INTRO} from '../ParticipationFields';
 import {t} from '../locales';
 import {industries,stages} from '../model';
 import type {RealConfig} from './config.ts';
 import {cleanedUrl,isAuthHash,parseAuthCallback} from './authCallback.ts';
 import {authErrorMessage,dataErrorMessage,nameProblem,passwordProblem,profileFormProblem,validEmail,type ProfileForm} from './validation.ts';
 import {clearStoredMode,otherRole,readStoredMode,resolveMode,roleLabel,writeStoredMode,type RealRole} from './roles.ts';
-import {formFromAccount,type Account,type AccountApi,type PhotoChange} from './account.ts';
+import {formFromAccount,storedParticipation,type Account,type AccountApi,type PhotoChange} from './account.ts';
 import type {AuthApi,AuthError,SessionUser} from './auth.ts';
 
 export type RealDeps={auth:AuthApi;account:AccountApi};
@@ -47,7 +48,7 @@ function Input({label,value,onChange,type='text',autoComplete}:{label:string;val
 }
 
 function RolePicker({value,onChange}:{value:RealRole|null;onChange:(r:RealRole)=>void}){
- return <div className="segmented" role="radiogroup" aria-label="Rol inițial">{(['creator','investor'] as RealRole[]).map(r=><button key={r} type="button" role="radio" aria-checked={value===r} className={value===r?'active':''} onClick={()=>onChange(r)}>{roleLabel[r]}</button>)}</div>;
+ return <><div className="segmented" role="radiogroup" aria-label="Rol inițial">{(['creator','investor'] as RealRole[]).map(r=><button key={r} type="button" role="radio" aria-checked={value===r} className={value===r?'active':''} onClick={()=>onChange(r)}>{roleLabel[r]}</button>)}</div><p className="caption">Creator: {PARTICIPATION_INTRO.toLowerCase()} Nu este nevoie de o idee proprie.</p></>;
 }
 
 function Notice({banner}:{banner:Banner}){return banner?<p className={banner.kind==='error'?'notice error':'notice'} role={banner.kind==='error'?'alert':'status'}>{banner.text}</p>:null}
@@ -192,11 +193,11 @@ export function AccountView({user,deps,route,nav,openDemo,recovery,endRecovery,b
  else if(route==='home')body=<><Heading title={`Bună, ${first} 👋`} eyebrow={mode==='investor'?'O NOUĂ ZI. NOI POSIBILITĂȚI.':'SPAȚIUL TĂU DE CREȘTERE'}/><p className="intro">Contul tău real este activ. Profilul și rolurile sunt salvate în siguranță, separat de datele demo.</p>
   <div className="notice">Etapa 1 · Cont real: profil, fotografie, roluri și setări. Proiectele, Match-ul, Marketplace-ul și clasamentul pentru conturile reale urmează. Până atunci le poți explora în modul demo, cu date fictive.</div>
   <div className="quick-grid"><Quick name="Profilul tău" icon={<User size={20}/>} onClick={()=>nav('profile')}/><Quick name="Editează profilul" icon={<SlidersHorizontal size={20}/>} onClick={()=>nav('settings')}/><Quick name="Explorează demo-ul" icon={<Sparkles size={20}/>} onClick={()=>openDemo('home')}/></div></>;
- else if(route==='profile')body=<><Heading title={'Oamenii fac\ndiferența.'} eyebrow="PROFILUL TĂU"/><div className="profile-card panel"><div className="large-avatar"><Avatar profile={person}/></div><h2>{profile.display_name}</h2>{roles.map(r=><span className="tag" key={r}>{roleLabel[r]}</span>)} <span className="tag">Cont real</span><p>{profile.bio||'Adaugă o descriere profesională din Setări.'}</p>{(profile.city||profile.company)&&<small>{[profile.city,profile.company].filter(Boolean).join(' · ')}</small>}</div>
+ else if(route==='profile')body=<><Heading title={'Oamenii fac\ndiferența.'} eyebrow="PROFILUL TĂU"/><div className="profile-card panel"><div className="large-avatar"><Avatar profile={person}/></div><h2>{profile.display_name}</h2>{roles.map(r=><span className="tag" key={r}>{roleLabel[r]}</span>)} <span className="tag">Cont real</span><p>{profile.bio||'Adaugă o descriere profesională din Setări.'}</p>{roles.includes('creator')&&<ParticipationSummary value={storedParticipation(profile)}/>}{(profile.city||profile.company)&&<small>{[profile.city,profile.company].filter(Boolean).join(' · ')}</small>}</div>
   <div className="quick-grid"><Quick name="Editează profilul" icon={<User size={20}/>} onClick={()=>nav('settings')}/><Quick name="Preferințe și contact" icon={<SlidersHorizontal size={20}/>} onClick={()=>nav('settings')}/></div>
   <RolesPanel both={both} mode={mode} missing={missing} setMode={setMode} askActivate={()=>setModal('role')}/>
   <button className="settings-row" onClick={()=>openDemo('home')}>Deschide modul demo <ArrowUpRight size={18}/></button><button className="settings-row" onClick={signOut}><LogOut size={18}/> Ieși din cont</button></>;
- else if(route==='settings')body=<><Heading title="Profil și preferințe" eyebrow={mode==='investor'?'CONT INVESTITOR':'CONT CREATOR'}/><ProfileSettings user={user} account={account} api={deps.account} investor={roles.includes('investor')} saved={async()=>{await reload();notify('Profil și preferințe salvate.');nav('profile')}} photoSaved={()=>{notify('Fotografia de profil a fost salvată.');void reload(true)}}/><RolesPanel both={both} mode={mode} missing={missing} setMode={setMode} askActivate={()=>setModal('role')}/></>;
+ else if(route==='settings')body=<><Heading title="Profil și preferințe" eyebrow={mode==='investor'?'CONT INVESTITOR':'CONT CREATOR'}/><ProfileSettings user={user} account={account} api={deps.account} investor={roles.includes('investor')} creator={roles.includes('creator')} saved={async()=>{await reload();notify('Profil și preferințe salvate.');nav('profile')}} photoSaved={()=>{notify('Fotografia de profil a fost salvată.');void reload(true)}}/><RolesPanel both={both} mode={mode} missing={missing} setMode={setMode} askActivate={()=>setModal('role')}/></>;
  else body=<Unavailable route={route} openDemo={openDemo}/>;
 
  return <Shell header={header} nav={bottom}>
@@ -238,7 +239,7 @@ function NewPassword({auth,done}:{auth:AuthApi;done:()=>void}){
  return <><Heading title={'Alege o\nparolă nouă.'} eyebrow="RESETAREA PAROLEI"/><form className="panel" onSubmit={submit} noValidate><Input label="Parolă nouă (minimum 10 caractere)" type="password" value={password} onChange={setPassword} autoComplete="new-password"/><Input label="Confirmă parola nouă" type="password" value={confirm} onChange={setConfirm} autoComplete="new-password"/>{error&&<p className="error" role="alert">{error}</p>}<Button type="submit" disabled={busy}>{busy?'Se salvează…':'Salvează parola'}</Button></form></>;
 }
 
-function ProfileSettings({user,account,api,investor,saved,photoSaved}:{user:SessionUser;account:Account;api:AccountApi;investor:boolean;saved:()=>Promise<void>;photoSaved?:()=>void}){
+function ProfileSettings({user,account,api,investor,creator,saved,photoSaved}:{user:SessionUser;account:Account;api:AccountApi;investor:boolean;creator:boolean;saved:()=>Promise<void>;photoSaved?:()=>void}){
  const [form,setForm]=useState<ProfileForm>(()=>formFromAccount(account));
  const [photo,setPhoto]=useState<PhotoChange>({kind:'keep'}),[photoBusy,setPhotoBusy]=useState(false);
  const [uploaded,setUploaded]=useState<string>(); // fotografia încadrată, deja încărcată din fereastra de încadrare
@@ -251,6 +252,7 @@ function ProfileSettings({user,account,api,investor,saved,photoSaved}:{user:Sess
   <PhotoEditor note="JPG, PNG sau WebP · maximum 5 MB. Încărcăm o miniatură vizibilă doar utilizatorilor autentificați." profile={preview} onChange={p=>setPhoto(p?{kind:'set',dataUrl:p}:{kind:'remove'})} onBusy={setPhotoBusy} originalKey={'real:'+user.id} save={async p=>{await api.savePhoto(user.id,p);setUploaded(p);setPhoto({kind:'keep'});photoSaved?.()}}/>
   <h3>Profil public</h3><p className="caption">Vizibil doar utilizatorilor autentificați BuildIT.</p>
   <Field label="Nume" value={form.display_name} onChange={set('display_name')}/><Field label="Descriere profesională" type="textarea" value={form.bio} onChange={set('bio')}/><Field label="Locație" value={form.city} onChange={set('city')}/><Field label="Companie" value={form.company} onChange={set('company')}/><Field label="Industrie de interes" value={form.industries} options={['',...industries]} onChange={set('industries')}/><Field label="Obiective și interese" type="textarea" value={form.objectives} onChange={set('objectives')}/>
+  {creator&&<ParticipationFields value={form.participation} onChange={set('participation')}/>}
   <h3>Date private</h3><p className="caption">Vizibile doar ție.</p>
   <label className="field"><span>Email cont</span><input type="email" value={user.email} readOnly aria-readonly="true"/></label>
   <Field label="Link adițional" value={form.link} onChange={set('link')}/><p className="caption">Opțional — profil LinkedIn, portofoliu profesional sau site web.</p>

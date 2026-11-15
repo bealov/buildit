@@ -13,6 +13,7 @@
 //  * Nu activează roluri și nu creează conturi.
 //
 // Rezultatele nu conțin emailuri, identificatori, parole sau date din profil.
+// Necesită ambele migrări aplicate (inclusiv 20261115000000_creator_participation.sql).
 // Rulare: GitHub Actions (vezi .github/workflows/buildit-dev-permissions.yml) sau local:
 //   npm run test:remote   (citește .env.local)
 import {createHash} from 'node:crypto';
@@ -27,7 +28,8 @@ const key=env.VITE_SUPABASE_PUBLISHABLE_KEY;
 if(!key.startsWith('sb_publishable_')){console.error('Folosește cheia publishable (sb_publishable_…). Cheile secrete nu sunt acceptate.');process.exit(2)}
 
 const BUCKET='avatars';
-const PROFILE_COLS=['display_name','avatar_path','bio','city','company','industries','objectives'];
+const PARTICIPATION_COLS=['wants_to_develop','wants_to_join','skills','desired_roles','weekly_hours'];
+const PROFILE_COLS=['display_name','avatar_path','bio','city','company','industries','objectives',...PARTICIPATION_COLS];
 const PRIVATE_COLS=['link','show_email_after_match','show_link_after_match','investor_min_budget','investor_max_budget','investor_stage'];
 const TINY_JPEG=Buffer.from('/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==','base64');
 const opts={auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false}};
@@ -59,6 +61,7 @@ async function signIn(label){
 }
 const A=await signIn('A'),B=await signIn('B'),anon=client();
 if(A.id===B.id){console.error('A și B trebuie să fie conturi diferite.');process.exit(2)}
+{const probe=await A.c.from('profiles').select(PARTICIPATION_COLS.join(',')).limit(1);if(probe.error){console.error(`Coloanele de participare lipsesc (cod ${codeOf(probe.error)}). Aplică întâi migrarea 20261115000000_creator_participation.sql pe buildit-dev. Nu am rulat niciun test.`);process.exit(2)}}
 
 // ---------------------------------------------------------------------------
 // Copie de siguranță (în memorie), citită de fiecare proprietar
@@ -82,7 +85,7 @@ const other=u=>u===A?B:A;
 async function restore(u){
  const init=initial[u.label],now=await snapshot(u),actions=[];
  if(!now)return ['profilul nu a putut fi recitit'];
- const diff=(a,b,cols)=>Object.fromEntries(cols.filter(k=>a[k]!==b[k]).map(k=>[k,a[k]]));
+ const diff=(a,b,cols)=>Object.fromEntries(cols.filter(k=>!same(a[k],b[k])).map(k=>[k,a[k]]));
  const p=diff(init.profile,now.profile,PROFILE_COLS);
  if(Object.keys(p).length){await u.c.from('profiles').update(p).eq('id',u.id);actions.push('profil')}
  const v=diff(init.priv,now.priv,PRIVATE_COLS);
@@ -135,6 +138,7 @@ async function run(){
    if(!r.error)fail('operațiunea a fost PERMISĂ');
   });
   await check(`${tag}: NU poate șterge fotografia`,async()=>{if(!yourInit.photo)return 'omis';const r=await me.c.storage.from(BUCKET).remove([photoPath(you.id)]);if(!r.error&&r.data?.length)fail('fotografia a fost ștearsă (va fi restaurată)')});
+  await check(`${tag}: NU poate modifica intențiile și competențele`,async()=>{const v=yourInit.profile;mustBeDenied(await me.c.from('profiles').update({wants_to_develop:v.wants_to_develop,wants_to_join:v.wants_to_join,skills:v.skills,desired_roles:v.desired_roles,weekly_hours:v.weekly_hours}).eq('id',you.id).select('id'))});
   await check(`${me.label}: NU își poate seta fotografia celuilalt cont`,async()=>{if(!(await me.c.from('profiles').update({avatar_path:photoPath(you.id)}).eq('id',me.id)).error)fail('operațiunea a fost PERMISĂ')});
  }
 
@@ -146,6 +150,22 @@ async function run(){
   await check(`${me.label}: NU poate crea un al doilea profil`,async()=>{if(!(await me.c.rpc('complete_profile',{p_display_name:'Al doilea profil',p_role:'creator'})).error)fail('operațiunea a fost PERMISĂ')});
   await check(`${me.label}: vede doar propriile date private`,async()=>{const r=await me.c.from('profiles_private').select('link');mustSucceed(r,1)});
   await check(`${me.label}: își poate salva profilul`,async()=>mustSucceed(await me.c.from('profiles').update({bio:init.profile.bio}).eq('id',me.id).select('id'),1));
+  await check(`${me.label}: salvează intențiile, competențele, rolul dorit și orele; persistă și sunt vizibile celuilalt cont`,async()=>{
+   const temp={wants_to_develop:!init.profile.wants_to_develop,wants_to_join:true,skills:['Test participare','Marketing'],desired_roles:['cofondator','team_leader'],weekly_hours:7};
+   try{
+    mustSucceed(await me.c.from('profiles').update(temp).eq('id',me.id).select('id'),1);
+    const fresh=client();const {error:e}=await fresh.auth.signInWithPassword({email:env[`BUILDIT_TEST_${me.label}_EMAIL`],password:env[`BUILDIT_TEST_${me.label}_PASSWORD`]});if(e)fail('reconectarea a eșuat');
+    const own=await fresh.from('profiles').select(PARTICIPATION_COLS.join(',')).eq('id',me.id).single();await fresh.auth.signOut({scope:'local'});
+    if(own.error||!same(own.data,temp))fail('valorile citite după reconectare diferă');
+    const seen=await other(me).c.from('profiles').select(PARTICIPATION_COLS.join(',')).eq('id',me.id).single();
+    if(seen.error||!same(seen.data,temp))fail('celălalt cont nu vede aceleași valori');
+    const roles=await me.c.from('profile_roles').select('role').eq('user_id',me.id);if(!same(roles.data.map(x=>x.role).sort(),init.roles))fail('rolurile de cont s-au schimbat');
+   }finally{const v=init.profile;await me.c.from('profiles').update({wants_to_develop:v.wants_to_develop,wants_to_join:v.wants_to_join,skills:v.skills,desired_roles:v.desired_roles,weekly_hours:v.weekly_hours}).eq('id',me.id)}
+  });
+  await check(`${me.label}: valori nepermise de participare sunt refuzate`,async()=>{
+   for(const bad of [{desired_roles:['admin']},{weekly_hours:0},{weekly_hours:169},{skills:['Design','design']},{skills:['x'.repeat(41)]}])
+    if(!(await me.c.from('profiles').update(bad).eq('id',me.id)).error)fail('o valoare nepermisă a fost acceptată ('+Object.keys(bad)[0]+')');
+  });
   await check(`${me.label}: își poate salva datele private`,async()=>mustSucceed(await me.c.from('profiles_private').update({link:init.priv.link}).eq('id',me.id).select('id'),1));
   await check(`${me.label}: regula permite adăugarea rolurilor proprii (verificat fără activare)`,async()=>{
    const r=await me.c.from('profile_roles').insert({user_id:me.id,role:init.roles[0]});

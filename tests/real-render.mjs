@@ -49,4 +49,21 @@ has(view('home',['creator'],{recovery:true}),'Alege o','recuperare');
 store.set('buildit-real-mode',JSON.stringify({userId:'B',role:'investor'}));has(view('profile',['creator','investor']),'aria-selected="true" class="active">Mod Creator','preferința altui cont ignorată');
 store.set('buildit-real-mode',JSON.stringify({userId:'A',role:'investor'}));has(view('profile',['creator','investor']),'aria-selected="true" class="active">Mod Investitor','preferința proprie aplicată');
 
+// Profil Creator: cum vrea utilizatorul să participe
+for(const roles of [['creator'],['investor'],['creator','investor']]){
+ const label='participare '+roles.join('+'),st=view('settings',roles),pr=view('profile',roles);
+ (roles.includes('creator')?has:lacks)(st,'Cum vrei să participi?',label);
+ if(roles.includes('creator')){has(st,'Dezvoltă un proiect sau contribuie la unul.',label);has(st,'Dezvolt un proiect',label);has(st,'Vreau să mă alătur unui proiect',label);lacks(st,'Rol dorit',label+' (alăturare nebifată: detalii ascunse)')}
+ lacks(pr,'Vrea să se alăture',label+' (profil existent fără intenții)');
+}
+const joined={...profile,wants_to_join:true,wants_to_develop:true,skills:['Marketing','Analiză de date'],desired_roles:['cofondator'],weekly_hours:20};
+const js=view('settings',['creator'],{account:{profile:joined,priv,roles:['creator']}});
+for(const t of ['Competențe','Rol dorit','Disponibilitate (ore pe săptămână)','Analiză de date','value="20"','nu oferă automat un statut sau drepturi speciale','aria-pressed="true" class="active">Marketing','aria-pressed="false" class="">Design'])has(js,t,'alăturare bifată');
+assert.equal((js.match(/type="checkbox" checked=""/g)||[]).length,2,'ambele intenții bifate');checks++;
+const jp=view('profile',['creator'],{account:{profile:joined,priv,roles:['creator']}});
+for(const t of ['Dezvoltă un proiect','Vrea să se alăture unui proiect','Marketing · Analiză de date','Cofondator','20 de ore pe săptămână'])has(jp,t,'profil cu participare');
+const hidden=view('profile',['creator'],{account:{profile:{...joined,wants_to_join:false},priv,roles:['creator']}});has(hidden,'Dezvoltă un proiect','alăturare debifată');lacks(hidden,'Analiză de date','alăturare debifată: detaliile păstrate, dar ascunse');
+lacks(view('profile',['investor'],{account:{profile:joined,priv,roles:['investor']}}),'Cum vrei','investitor');
+has(view('home',['creator'],{account:{profile:null,priv:null,roles:[]}}),'Creator: dezvoltă un proiect sau contribuie la unul.','alegerea rolului');
+
 console.log(`${checks} verificări de randare pentru conturile reale (date simulate, fără Supabase).`);

@@ -139,14 +139,38 @@ try{
   assert.equal(db.profiles[users.A.id].bio,'Fondatoare și mentor');assert.equal(db.profiles_private[users.A.id].link,'https://exemplu.ro/ana');
   assert.equal(db.profiles_private[users.A.id].show_email_after_match,false,'contact ascuns implicit');
  });
+ await step('Creator fără proiect: „Vreau să mă alătur” cu competențe, rol și ore se salvează și rămâne după reîncărcare',async()=>{
+  await page.getByRole('button',{name:'Editează profilul'}).click();
+  const toggle=name=>page.locator('label.toggle',{hasText:name}).locator('input');
+  assert.equal(await toggle('Vreau să mă alătur').isChecked(),false,'profil existent fără intenții');
+  await toggle('Vreau să mă alătur').check();
+  await page.getByRole('button',{name:'Marketing',exact:true}).click();
+  await page.getByLabel('Altă competență').fill('Juridic');await page.getByRole('button',{name:'Adaugă',exact:true}).click();
+  await page.getByRole('button',{name:'Cofondator'}).click();
+  await page.getByLabel('Disponibilitate (ore pe săptămână)').fill('12');
+  await page.getByRole('button',{name:'Salvează modificările'}).click();await page.getByText('Profil și preferințe salvate.').waitFor();
+  const row=db.profiles[users.A.id];
+  assert.deepEqual([row.wants_to_develop,row.wants_to_join,row.skills,row.desired_roles,row.weekly_hours],[false,true,['Marketing','Juridic'],['cofondator'],12]);
+  assert.deepEqual(db.profile_roles.filter(r=>r.user_id===users.A.id).map(r=>r.role),['creator'],'intențiile nu schimbă rolurile de cont');
+  await page.reload();
+  assert.equal(await toggle('Vreau să mă alătur').isChecked(),true,'bifa rămâne după reîncărcare');
+  assert.equal(await page.getByLabel('Disponibilitate (ore pe săptămână)').inputValue(),'12');
+  await page.locator('.bottom-nav button',{hasText:'Profil'}).click();await page.getByText('Vrea să se alăture unui proiect').waitFor();
+  assert.ok((await text()).includes('12 ore pe săptămână'));
+  await page.getByText('Profil și preferințe salvate.').waitFor({state:'detached'}).catch(()=>{});
+ });
  await step('fotografia se încarcă în folderul propriu și se afișează prin URL temporar',async()=>{
   await page.getByRole('button',{name:'Editează profilul'}).click();
   await page.locator('input[type=file]').setInputFiles({name:'poza.png',mimeType:'image/png',buffer:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==','base64')});
-  await page.getByRole('button',{name:'Schimbă poza'}).waitFor();
-  await page.getByText('Profil și preferințe salvate.').waitFor({state:'detached'});
-  await page.getByRole('button',{name:'Salvează modificările'}).click();await page.getByText('Profil și preferințe salvate.').waitFor();
+  // Fereastra de încadrare: „Salvează fotografia” încarcă direct rezultatul decupat.
+  await page.locator('dialog.crop-dialog[open]').waitFor();
+  await page.getByRole('button',{name:'Salvează fotografia'}).click();
+  await page.getByText('Fotografia de profil a fost salvată.').waitFor();
+  await page.locator('dialog.crop-dialog').waitFor({state:'detached'});
   assert.ok(db.objects[`${users.A.id}/avatar.jpg`]>0);assert.equal(db.profiles[users.A.id].avatar_path,`${users.A.id}/avatar.jpg`);
-  const src=await page.locator('.large-avatar img').getAttribute('src');assert.ok(src.includes('/object/sign/avatars/')&&src.includes('token='),'URL semnat, nu public');
+  // Previzualizarea din formular arată imediat poza încadrată; antetul se reîncarcă prin URL semnat.
+  await page.waitForFunction(()=>document.querySelector('header .avatar img')?.getAttribute('src')?.includes('/object/sign/avatars/'));
+  const src=await page.locator('header .avatar img').getAttribute('src');assert.ok(src.includes('/object/sign/avatars/')&&src.includes('token='),'URL semnat, nu public');
  });
  await step('activarea rolului Investitor și comutarea modului',async()=>{
   await page.getByRole('button',{name:'Activează rolul Investitor'}).click();

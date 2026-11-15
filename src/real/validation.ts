@@ -1,5 +1,6 @@
 // Validări pentru formularele conturilor reale. Limitele sunt aceleași ca în migrarea SQL;
 // baza de date le verifică oricum, aici oferim doar mesaje clare în română.
+import {participationProblem,type Participation} from '../participation.ts';
 import {industries,stages} from '../model.ts';
 
 export const LIMITS={name:[2,80],bio:600,city:80,company:120,industries:80,objectives:600,link:300,stage:40,password:[10,72]} as const;
@@ -37,7 +38,7 @@ export function parseBudget(text:string):{value:number|null;problem:string|null}
  return {value:n,problem:null};
 }
 
-export type ProfileForm={display_name:string;bio:string;city:string;company:string;industries:string;objectives:string;link:string;show_email_after_match:boolean;show_link_after_match:boolean;investor_min_budget:string;investor_max_budget:string;investor_stage:string};
+export type ProfileForm={display_name:string;bio:string;city:string;company:string;industries:string;objectives:string;link:string;show_email_after_match:boolean;show_link_after_match:boolean;investor_min_budget:string;investor_max_budget:string;investor_stage:string;participation:Participation};
 
 export function profileFormProblem(f:ProfileForm,investor:boolean){
  const name=nameProblem(f.display_name);if(name)return name;
@@ -45,6 +46,7 @@ export function profileFormProblem(f:ProfileForm,investor:boolean){
  for(const [key,max,label] of lengths)if(String(f[key]).length>max)return `${label} poate avea cel mult ${max} de caractere.`;
  if(f.industries&&!industries.includes(f.industries))return 'Alege o industrie din listă.';
  const link=linkProblem(f.link);if(link)return link;
+ const part=participationProblem(f.participation);if(part)return part;
  if(investor){
   const min=parseBudget(f.investor_min_budget),max=parseBudget(f.investor_max_budget);
   if(min.problem)return min.problem;if(max.problem)return max.problem;

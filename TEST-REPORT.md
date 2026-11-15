@@ -80,3 +80,37 @@ Neverificate încă: emailurile de confirmare și resetare (conturile de test au
 ## De urmărit (notat 11 noiembrie 2026, nemodificat încă)
 
 - Fotografia de profil a contului real apare cu câteva secunde după restul datelor la prima încărcare (laptop și telefon); la revenirea în profil fără reîncărcare apare imediat. Ipoteze de verificat: linkul temporar (semnat) este nou la fiecare încărcare, deci nu poate fi preluat din memoria browserului, iar imaginea se descarcă abia după ce profilul este afișat.
+
+## Fotografia de profil — 15 noiembrie 2026
+
+Încadrarea fotografiei (previzualizare circulară, mutare cu mouse-ul sau degetul, zoom, JPEG pătrat de 256 px), reîncadrarea din originalul păstrat doar în browser și afișarea mai rapidă a avatarului (adresa semnată cerută în paralel și refolosită cât timp este validă; inițiale cât timp se descarcă poza). Verificate automat în Chromium, pe desktop și pe iPhone 13 emulat, cu un serviciu simulat (66 de verificări), și manual, de proprietar, în Vercel Preview pe laptop și telefon. Încărcarea propriu-zisă în bucket nu a fost reverificată cu `rls-remote.mjs`; regulile Storage nu s-au schimbat. Întârzierea notată la 11 noiembrie a fost tratată în cod; efectul pe Supabase-ul găzduit nu a fost măsurat.
+
+## Profil Creator: cum vrei să participi — 15 noiembrie 2026
+
+Migrare nouă: `supabase/migrations/20261115000000_creator_participation.sql` (migrarea din 2 noiembrie nu a fost modificată).
+
+### Executate și trecute
+
+| Comandă | Rezultat |
+|---|---|
+| `npm run lint` | 0 erori |
+| `npm run build` | TypeScript strict și Vite reușite |
+| `npm test` | 51/51 teste (5 noi), 63 verificări de randare demo, 331 verificări de randare pentru conturile reale (32 noi) |
+| `npm run test:db` | 97/97 verificări (22 noi), rulate în ambele moduri de expunere a tabelelor; ambele migrări aplicate de două ori fără erori |
+| `npm run test:e2e` | 15/15 pași (1 nou) în Chromium, cu server Supabase **simulat** local; pasul pentru fotografie actualizat la fluxul cu fereastra de încadrare |
+| Chromium (Playwright), desktop 1366 px și iPhone 13 emulat | 36 de verificări ale interfeței, cu rândul din baza de date simulat |
+
+**Baza de date (Postgres local, schemele Supabase simulate):** profilurile existente nu primesc intenții; RLS rămâne activ; A salvează doar „alătur” cu competențe, roluri și ore, apoi doar „dezvolt” (fără proiect), apoi ambele; debifarea păstrează competențele, rolurile și orele; rolurile de cont rămân Creator/Investitor; A nu poate modifica participarea lui B și invers (0 rânduri); B vede participarea publică a lui A; vizitatorul anonim nu o vede; sunt refuzate rolul dorit `admin`, 0 sau 169 de ore, competențe goale, peste 40 de caractere, duplicate (indiferent de majuscule), peste 15 competențe și roluri dorite duplicate.
+
+**Interfață (desktop și telefon):** profil existent fără intenții și cu detaliile ascunse; fiecare intenție separat și ambele împreună; salvare fără proiect; competențe sugerate și proprii (duplicat respins cu mesaj, spații normalizate, adăugare cu Enter); roluri dorite; ore invalide respinse cu mesaj clar fără salvare; valorile se recitesc după reîncărcare; debifarea ascunde fără a șterge, iar rebifarea le readuce; secțiunea apare pentru Creator și pentru ambele roluri, nu și doar pentru Investitor; salvarea ca Investitor nu șterge participarea; fără derulare orizontală. Demo: date vechi fără intenții; salvare și păstrare după refresh; ceilalți creatori demo nu moștenesc intențiile creatorului principal.
+
+### De verificat după aplicarea migrării pe buildit-dev
+
+- `tests/rls-remote.mjs` (GitHub Actions, eticheta `verifica-buildit-dev`): salvare, persistență după reconectare, vizibilitate pentru celălalt cont, imposibilitatea modificării datelor celuilalt cont, refuzul valorilor nepermise. **Nerulat încă**: migrarea nu era aplicată pe buildit-dev la data commit-ului.
+- Manual, în Vercel Preview, pe laptop și telefon: salvarea și persistența pe alt dispozitiv.
+
+### Limite
+
+- Testele de interfață și E2E au folosit un serviciu simulat; regulile reale sunt verificate local în `test:db` și, după aplicarea migrării, în `rls-remote.mjs`.
+- Datele de participare sunt publice pentru utilizatorii autentificați, ca restul profilului public. Matching-ul care le va folosi nu este implementat.
+

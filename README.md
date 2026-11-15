@@ -97,3 +97,12 @@ Autentificare și profiluri reale cu Supabase, **doar pentru mediul de test** (p
 Fișiere: `supabase/migrations/20261102000000_profiles_and_roles.sql`, `src/real/*`, `src/entry.tsx`. Ghiduri: [docs/etapa-1-conturi-reale.md](docs/etapa-1-conturi-reale.md) (migrare, conturi de test, Vercel Preview, verificarea cu două conturi) și [docs/etapa-1-email.md](docs/etapa-1-email.md) (SMTP, șabloane, adrese de redirecționare).
 
 Dependențe pentru etapele următoare: proiectele, ofertele Marketplace, achizițiile și Match-ul vor folosi `profiles.id` ca proprietar și `profile_roles` pentru drepturi; afișarea contactului după Match va citi preferințele din `profiles_private` printr-o funcție care verifică Match-ul confirmat. Match-ul cu propriile proiecte și cumpărarea propriilor planuri vor fi interzise în baza de date.
+
+## Profil Creator: cum vrei să participi — 15 noiembrie 2026
+
+Rolurile rămân **Creator** și **Investitor** (unul sau ambele). În profilul Creator, secțiunea „Cum vrei să participi?” explică: „Dezvoltă un proiect sau contribuie la unul.” și oferă două intenții independente, care pot fi bifate împreună: „Dezvolt un proiect” și „Vreau să mă alătur unui proiect”. Intențiile nu sunt roluri de autentificare și nu cer un proiect sau un plan de afaceri.
+
+- Cu „Vreau să mă alătur unui proiect”: **Competențe** (Marketing, Vânzări, Design, Programare, Finanțe, Coordonare de echipă și competențe proprii; maximum 15, fiecare de cel mult 40 de caractere, fără duplicate), **Rol dorit** (Cofondator, Membru al echipei, Manager de proiect, Team leader) și **Disponibilitate** în ore pe săptămână (1–168). „Cofondator” este doar un rol căutat; nu acordă statut sau drepturi.
+- Debifarea unei intenții ascunde câmpurile, dar nu le șterge. Profilurile existente nu primesc intenții automat. Pagina de profil arată intențiile și, dacă „alătur” este activă, competențele, rolul dorit și orele.
+- Conturi reale: coloane noi în `profiles` (vizibile utilizatorilor autentificați, modificabile doar de proprietar), adăugate de migrarea `supabase/migrations/20261115000000_creator_participation.sql`; pașii de aplicare sunt în [docs/etapa-1b-participare.md](docs/etapa-1b-participare.md). Demo: câmpul opțional `participation` din profil, în localStorage.
+- Matching-ul „Descoperă proiecte” / „Descoperă oameni” nu este inclus încă.

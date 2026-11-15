@@ -1,13 +1,14 @@
 // Teste pentru conturile reale (etapa 1), fără conexiune la Supabase.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync} from 'node:fs';
+import {readFileSync,readdirSync} from 'node:fs';
 import {readRealConfig,isSecretKey,configProblemMessage} from '../src/real/config.ts';
 import {parseAuthCallback,cleanedUrl,redirectUrl,isAuthHash} from '../src/real/authCallback.ts';
 import {passwordProblem,nameProblem,linkProblem,parseBudget,profileFormProblem,authErrorMessage,validEmail} from '../src/real/validation.ts';
 import {resolveMode,readStoredMode,writeStoredMode,clearStoredMode,readAppMode,MODE_KEY} from '../src/real/roles.ts';
 import {createAccountApi,profileUpdate,privateUpdate,formFromAccount,emptyForm,avatarPath} from '../src/real/account.ts';
 import {createAuthApi} from '../src/real/auth.ts';
+import {DESIRED_ROLES,emptyParticipation,hoursLabel,parseHours,participationFromStored,participationToStored,skillProblem,type DesiredRole} from '../src/participation.ts';
 
 const migration=readFileSync(new URL('../supabase/migrations/20261102000000_profiles_and_roles.sql',import.meta.url),'utf8');
 const b64=(o:object)=>Buffer.from(JSON.stringify(o)).toString('base64url');
@@ -105,10 +106,12 @@ test('roles: browser mode is only a preference and never grants a role',()=>{
 });
 
 // ---------------------------------------------------------------------------
+// Toate migrările, în ordine: permisiunile se pot adăuga în migrări noi.
+const allMigrations=readdirSync(new URL('../supabase/migrations/',import.meta.url)).filter(f=>f.endsWith('.sql')).sort().map(f=>readFileSync(new URL('../supabase/migrations/'+f,import.meta.url),'utf8')).join('\n');
 const granted=(table:string)=>{
- const m=migration.match(new RegExp(`grant update \\(([^)]*)\\)\\s*on table public\\.${table} to authenticated`,'s'));
- assert.ok(m,`GRANT UPDATE pentru ${table}`);
- return m[1].split(',').map(c=>c.trim()).filter(Boolean);
+ const all=[...allMigrations.matchAll(new RegExp(`grant update \\(([^)]*)\\)\\s*on table public\\.${table} to authenticated`,'gs'))];
+ assert.ok(all.length,`GRANT UPDATE pentru ${table}`);
+ return all.flatMap(m=>m[1].split(',').map(c=>c.trim()).filter(Boolean));
 };
 
 test('account: updates only send the columns granted in the migration',()=>{
@@ -166,7 +169,7 @@ test('account api: every request is scoped to the signed-in user; photo goes to 
  assert.ok(calls.includes('storage.avatars.sign(A/avatar.jpg,3600)'),'URL temporar, nu public');
  await api.save('A',{...emptyForm(),display_name:'Ana'},false,{kind:'set',dataUrl:'data:image/jpeg;base64,eA=='});
  assert.ok(calls.includes(`storage.avatars.upload(${avatarPath('A')})`));
- assert.ok(calls.includes('profiles.update(avatar_path,bio,city,company,display_name,industries,objectives)'));
+ assert.ok(calls.includes('profiles.update(avatar_path,bio,city,company,desired_roles,display_name,industries,objectives,skills,wants_to_develop,wants_to_join,weekly_hours)'));
  assert.ok(calls.filter(c=>c.includes('.eq(')).every(c=>c.endsWith('=A)')),'toate filtrele folosesc contul curent');
  await api.activateRole('A','investor');assert.ok(calls.includes('profile_roles.insert(A:investor)'));
  await api.completeProfile(' Ana ','creator');assert.ok(calls.includes('rpc.complete_profile(Ana,creator)'));
@@ -227,4 +230,45 @@ test('auth api: signup metadata, redirect URLs, local sign-out and callbacks',as
  assert.deepEqual(await auth.handleCallback({kind:'code',code:'c1',intent:'unknown'}),{recovery:true},'resetarea detectată din codul PKCE');assert.deepEqual(calls.at(-1),{name:'exchange',args:['c1']});
  assert.deepEqual(await auth.handleCallback({kind:'otp',tokenHash:'h',type:'recovery',intent:'recovery'}),{recovery:true});
  assert.deepEqual(await auth.handleCallback({kind:'otp',tokenHash:'h',type:'email',intent:'confirm'}),{recovery:false});assert.deepEqual(calls.at(-1),{name:'verify',args:[{token_hash:'h',type:'email'}]});
+});
+
+// ---------------------------------------------------------------------------
+// Profil Creator: cum vrea utilizatorul să participe
+// ---------------------------------------------------------------------------
+test('participation: each intent alone, both together, saved without a project',()=>{
+ const base={...emptyForm(),display_name:'Ana'};
+ for(const [develop,join] of [[true,false],[false,true],[true,true],[false,false]]){
+  const form={...base,participation:{...emptyParticipation(),develop,join}};
+  assert.equal(profileFormProblem(form,false),null,`${develop}/${join}: se salvează fără proiect`);
+  const u=profileUpdate(form);assert.equal(u.wants_to_develop,develop);assert.equal(u.wants_to_join,join);
+ }
+});
+
+test('participation: join details are normalized, unchecking join keeps them',()=>{
+ const part={develop:false,join:true,skills:['  Analiză   de date ','Marketing','marketing'],roles:['team_leader','cofondator'] as DesiredRole[],hours:' 12 '};
+ const stored=participationToStored(part);
+ assert.deepEqual(stored,{develop:false,join:true,skills:['Analiză de date','Marketing'],roles:['cofondator','team_leader'],hours:12});
+ const unchecked=participationToStored({...part,join:false});
+ assert.deepEqual([unchecked.skills,unchecked.roles,unchecked.hours],[stored.skills,stored.roles,stored.hours],'debifarea nu șterge');
+ const back=formFromAccount({profile:{id:'A',display_name:'Ana',avatar_path:null,bio:'',city:'',company:'',industries:'',objectives:'',updated_at:'',wants_to_develop:false,wants_to_join:false,skills:stored.skills,desired_roles:stored.roles,weekly_hours:12},priv:null,roles:['creator']});
+ assert.deepEqual(back.participation,{develop:false,join:false,skills:['Analiză de date','Marketing'],roles:['cofondator','team_leader'],hours:'12'});
+});
+
+test('participation: existing profiles and old demo data get no intents',()=>{
+ const old=formFromAccount({profile:{id:'A',display_name:'Ana',avatar_path:null,bio:'',city:'',company:'',industries:'',objectives:'',updated_at:''},priv:null,roles:['creator','investor']});
+ assert.deepEqual(old.participation,emptyParticipation());
+ assert.deepEqual(participationFromStored(undefined),emptyParticipation());
+ assert.deepEqual(participationFromStored({skills:'x',roles:['admin','cofondator']}).roles,['cofondator'],'roluri necunoscute ignorate');
+});
+
+test('participation: limits match the migration',()=>{
+ assert.equal(parseHours('').value,null);assert.equal(parseHours('40').value,40);
+ for(const bad of ['0','169','2.5','-3','zece'])assert.ok(parseHours(bad).problem,bad);
+ assert.ok(skillProblem([],'  '));assert.ok(skillProblem([],'x'.repeat(41)));assert.ok(skillProblem(['Design'],'design'));
+ assert.ok(skillProblem(Array.from({length:15},(_,i)=>'c'+i),'nou'));assert.equal(skillProblem([],'Juridic'),null);
+ const m=readFileSync(new URL('../supabase/migrations/20261115000000_creator_participation.sql',import.meta.url),'utf8');
+ assert.match(m,/cardinality\(skills\) <= 15/);assert.match(m,/char_length\(s\) not between 1 and 40/);assert.match(m,/weekly_hours between 1 and 168/);
+ for(const [id] of DESIRED_ROLES)assert.ok(m.includes(`'${id}'`),id);
+ assert.ok(!/profile_roles/.test(m.replace(/--.*$/gm,'')),'intențiile nu ating rolurile de cont');
+ assert.equal(hoursLabel(1),'1 oră');assert.equal(hoursLabel(10),'10 ore');assert.equal(hoursLabel(20),'20 de ore');
 });

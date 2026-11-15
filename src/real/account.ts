@@ -1,10 +1,11 @@
 // Acces la datele contului real. Fiecare operațiune este limitată suplimentar de RLS în baza
 // de date; aici trimitem doar cereri pentru contul autentificat.
+import {emptyParticipation,participationFromStored,participationToStored} from '../participation.ts';
 import type {SupabaseClient} from '@supabase/supabase-js';
 import {isRealRole,type RealRole} from './roles.ts';
 import {parseBudget,type ProfileForm} from './validation.ts';
 
-export type PublicProfile={id:string;display_name:string;avatar_path:string|null;bio:string;city:string;company:string;industries:string;objectives:string;updated_at:string};
+export type PublicProfile={id:string;display_name:string;avatar_path:string|null;bio:string;city:string;company:string;industries:string;objectives:string;updated_at:string;wants_to_develop?:boolean;wants_to_join?:boolean;skills?:string[];desired_roles?:string[];weekly_hours?:number|null};
 export type PrivateProfile={link:string;show_email_after_match:boolean;show_link_after_match:boolean;investor_min_budget:number|null;investor_max_budget:number|null;investor_stage:string};
 export type Account={profile:PublicProfile|null;priv:PrivateProfile|null;roles:RealRole[];avatarUrl?:string};
 export type PhotoChange={kind:'keep'}|{kind:'set';dataUrl:string}|{kind:'remove'};
@@ -12,18 +13,24 @@ export type DataError={code?:string;message?:string};
 
 export const AVATAR_BUCKET='avatars';
 export const avatarPath=(userId:string)=>`${userId}/avatar.jpg`;
-const PUBLIC_COLUMNS='id,display_name,avatar_path,bio,city,company,industries,objectives,updated_at';
+const PUBLIC_COLUMNS='id,display_name,avatar_path,bio,city,company,industries,objectives,updated_at,wants_to_develop,wants_to_join,skills,desired_roles,weekly_hours';
 const PRIVATE_COLUMNS='link,show_email_after_match,show_link_after_match,investor_min_budget,investor_max_budget,investor_stage';
 
-export function emptyForm():ProfileForm{return {display_name:'',bio:'',city:'',company:'',industries:'',objectives:'',link:'',show_email_after_match:false,show_link_after_match:false,investor_min_budget:'',investor_max_budget:'',investor_stage:''}}
+export function emptyForm():ProfileForm{return {display_name:'',bio:'',city:'',company:'',industries:'',objectives:'',link:'',show_email_after_match:false,show_link_after_match:false,investor_min_budget:'',investor_max_budget:'',investor_stage:'',participation:emptyParticipation()}}
 
 export function formFromAccount(a:Account):ProfileForm{
  const p=a.profile,v=a.priv;
- return {...emptyForm(),display_name:p?.display_name??'',bio:p?.bio??'',city:p?.city??'',company:p?.company??'',industries:p?.industries??'',objectives:p?.objectives??'',link:v?.link??'',show_email_after_match:!!v?.show_email_after_match,show_link_after_match:!!v?.show_link_after_match,investor_min_budget:v?.investor_min_budget==null?'':String(v.investor_min_budget),investor_max_budget:v?.investor_max_budget==null?'':String(v.investor_max_budget),investor_stage:v?.investor_stage??''};
+ return {...emptyForm(),display_name:p?.display_name??'',bio:p?.bio??'',city:p?.city??'',company:p?.company??'',industries:p?.industries??'',objectives:p?.objectives??'',participation:participationFromStored(p&&{develop:p.wants_to_develop,join:p.wants_to_join,skills:p.skills,roles:p.desired_roles,hours:p.weekly_hours}),link:v?.link??'',show_email_after_match:!!v?.show_email_after_match,show_link_after_match:!!v?.show_link_after_match,investor_min_budget:v?.investor_min_budget==null?'':String(v.investor_min_budget),investor_max_budget:v?.investor_max_budget==null?'':String(v.investor_max_budget),investor_stage:v?.investor_stage??''};
 }
 
 /** Doar coloanele pe care utilizatorul le poate modifica (aceleași ca în GRANT UPDATE). */
-export function profileUpdate(f:ProfileForm){return {display_name:f.display_name.trim(),bio:f.bio.trim(),city:f.city.trim(),company:f.company.trim(),industries:f.industries,objectives:f.objectives.trim()}}
+export function profileUpdate(f:ProfileForm){
+ const part=participationToStored(f.participation);
+ return {display_name:f.display_name.trim(),bio:f.bio.trim(),city:f.city.trim(),company:f.company.trim(),industries:f.industries,objectives:f.objectives.trim(),
+  wants_to_develop:part.develop,wants_to_join:part.join,skills:part.skills,desired_roles:part.roles,weekly_hours:part.hours};
+}
+/** Participarea publică a unui profil, în forma folosită de rezumat. */
+export const storedParticipation=(p:PublicProfile)=>participationToStored(participationFromStored({develop:p.wants_to_develop,join:p.wants_to_join,skills:p.skills,roles:p.desired_roles,hours:p.weekly_hours}));
 export function privateUpdate(f:ProfileForm,investor:boolean){
  const base={link:f.link.trim(),show_email_after_match:f.show_email_after_match,show_link_after_match:f.show_link_after_match};
  if(!investor)return base;

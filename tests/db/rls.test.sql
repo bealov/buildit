@@ -204,6 +204,44 @@ delete from auth.users where id = :'C';
 select t.expect_rows('ștergerea contului C elimină profilul, datele private și rolurile', $$select 1 from public.profiles p full join public.profile_roles r on r.user_id = p.id where coalesce(p.id, r.user_id) = '33333333-3333-3333-3333-333333333333'$$, 0);
 
 -- ---------------------------------------------------------------------------
+-- 7. Profil Creator: intenții de participare, competențe, rol dorit, disponibilitate
+-- ---------------------------------------------------------------------------
+select t.expect_rows('participare: profilurile existente nu primesc intenții sau date automat', $$select 1 from public.profiles where wants_to_develop or wants_to_join or cardinality(skills) > 0 or cardinality(desired_roles) > 0 or weekly_hours is not null$$, 0);
+select t.expect_true('participare: RLS rămâne activ pe profiles', $$select relrowsecurity from pg_class where oid = 'public.profiles'::regclass$$);
+
+set role authenticated;
+select set_config('request.jwt.claims', '{"sub":"11111111-1111-1111-1111-111111111111","role":"authenticated"}', false);
+select t.expect_affected('A: doar „Vreau să mă alătur”, cu competențe, rol și ore', $$update public.profiles set wants_to_join = true, skills = array['Marketing', 'Analiză de date'], desired_roles = array['cofondator', 'team_leader'], weekly_hours = 10 where id = '11111111-1111-1111-1111-111111111111'$$, 1);
+select t.expect_rows('A: datele de participare sunt salvate', $$select 1 from public.profiles where id = '11111111-1111-1111-1111-111111111111' and wants_to_join and not wants_to_develop and skills = array['Marketing', 'Analiză de date'] and desired_roles = array['cofondator', 'team_leader'] and weekly_hours = 10$$, 1);
+select t.expect_affected('A: doar „Dezvolt un proiect” (fără proiect creat)', $$update public.profiles set wants_to_develop = true, wants_to_join = false where id = '11111111-1111-1111-1111-111111111111'$$, 1);
+select t.expect_rows('A: debifarea intenției păstrează competențele, rolurile și orele', $$select 1 from public.profiles where id = '11111111-1111-1111-1111-111111111111' and wants_to_develop and not wants_to_join and cardinality(skills) = 2 and cardinality(desired_roles) = 2 and weekly_hours = 10$$, 1);
+select t.expect_affected('A: ambele intenții', $$update public.profiles set wants_to_develop = true, wants_to_join = true where id = '11111111-1111-1111-1111-111111111111'$$, 1);
+select t.expect_rows('A: rolurile de cont rămân Creator + Investitor (intențiile nu sunt roluri)', $$select 1 from public.profile_roles where user_id = '11111111-1111-1111-1111-111111111111'$$, 2);
+select t.expect_affected('A: NU poate modifica participarea lui B (0 rânduri)', $$update public.profiles set wants_to_join = true, skills = array['Furt'], weekly_hours = 99 where id = '22222222-2222-2222-2222-222222222222'$$, 0);
+select t.expect_error('A: rol dorit inexistent respins (ex. admin)', $$update public.profiles set desired_roles = array['admin'] where id = '11111111-1111-1111-1111-111111111111'$$, array['23514']);
+select t.expect_error('A: ore 0 respinse', $$update public.profiles set weekly_hours = 0 where id = '11111111-1111-1111-1111-111111111111'$$, array['23514']);
+select t.expect_error('A: peste 168 de ore respinse', $$update public.profiles set weekly_hours = 169 where id = '11111111-1111-1111-1111-111111111111'$$, array['23514']);
+select t.expect_error('A: competență goală respinsă', $$update public.profiles set skills = array[' '] where id = '11111111-1111-1111-1111-111111111111'$$, array['23514']);
+select t.expect_error('A: competență peste 40 de caractere respinsă', $$update public.profiles set skills = array[repeat('x', 41)] where id = '11111111-1111-1111-1111-111111111111'$$, array['23514']);
+select t.expect_error('A: competențe duplicate respinse (fără diferență de majuscule)', $$update public.profiles set skills = array['Design', 'design'] where id = '11111111-1111-1111-1111-111111111111'$$, array['23514']);
+select t.expect_error('A: peste 15 competențe respinse', $$update public.profiles set skills = (select array_agg('c' || g) from generate_series(1, 16) g) where id = '11111111-1111-1111-1111-111111111111'$$, array['23514']);
+select t.expect_error('A: roluri dorite duplicate respinse', $$update public.profiles set desired_roles = array['cofondator', 'cofondator'] where id = '11111111-1111-1111-1111-111111111111'$$, array['23514']);
+select t.expect_rows('A: valorile valide anterioare au rămas după încercările respinse', $$select 1 from public.profiles where id = '11111111-1111-1111-1111-111111111111' and weekly_hours = 10 and cardinality(skills) = 2$$, 1);
+reset role;
+
+set role authenticated;
+select set_config('request.jwt.claims', '{"sub":"22222222-2222-2222-2222-222222222222","role":"authenticated"}', false);
+select t.expect_rows('B: participarea lui B nu a fost modificată de A', $$select 1 from public.profiles where id = '22222222-2222-2222-2222-222222222222' and not wants_to_join and cardinality(skills) = 0 and weekly_hours is null$$, 1);
+select t.expect_rows('B: vede participarea publică a lui A', $$select 1 from public.profiles where id = '11111111-1111-1111-1111-111111111111' and wants_to_join$$, 1);
+select t.expect_affected('B: NU poate modifica participarea lui A (0 rânduri)', $$update public.profiles set wants_to_join = false where id = '11111111-1111-1111-1111-111111111111'$$, 0);
+reset role;
+
+set role anon;
+select set_config('request.jwt.claims', '{"role":"anon"}', false);
+select t.expect_error('anon: NU vede datele de participare', $$select skills from public.profiles$$, array['42501']);
+reset role;
+
+-- ---------------------------------------------------------------------------
 -- Rezultat
 -- ---------------------------------------------------------------------------
 \o
