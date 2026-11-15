@@ -30,6 +30,14 @@ export function privateUpdate(f:ProfileForm,investor:boolean){
  return {...base,investor_min_budget:parseBudget(f.investor_min_budget).value,investor_max_budget:parseBudget(f.investor_max_budget).value,investor_stage:f.investor_stage};
 }
 
+const SIGN_SECONDS=3600,CACHE_SECONDS='3600',URL_KEY='buildit-avatar-url:';
+type CachedUrl={path:string;stamp:string;url:string;exp:number};
+const urlStore=()=>{try{return globalThis.localStorage}catch{return undefined}};
+/** Adresa semnată anterior, dacă mai e valabilă cel puțin 10 minute. Orice salvare a profilului schimbă updated_at și o invalidează. */
+export function readCachedUrl(userId:string):CachedUrl|undefined{try{const v=JSON.parse(urlStore()?.getItem(URL_KEY+userId)??'null') as CachedUrl|null;return v&&typeof v.url==='string'&&v.exp-Date.now()>10*60*1000?v:undefined}catch{return undefined}}
+function writeCachedUrl(userId:string,v:CachedUrl){try{urlStore()?.setItem(URL_KEY+userId,JSON.stringify(v))}catch{/* fără cache */}}
+export function clearCachedUrl(userId:string){try{urlStore()?.removeItem(URL_KEY+userId)}catch{/* fără cache */}}
+
 export async function dataUrlToBlob(dataUrl:string){const res=await fetch(dataUrl);return res.blob()}
 
 export type AccountApi={
@@ -45,11 +53,15 @@ export function createAccountApi(client:SupabaseClient):AccountApi{
  const fail=(error:DataError|null)=>{if(error)throw error};
  const signed=async(path:string|null)=>{
   if(!path)return undefined;
-  const {data,error}=await client.storage.from(AVATAR_BUCKET).createSignedUrl(path,3600);
+  const {data,error}=await client.storage.from(AVATAR_BUCKET).createSignedUrl(path,SIGN_SECONDS);
   return error?undefined:data?.signedUrl;
  };
  return {
   async load(userId){
+   // Adresa semnată se cere în paralel cu profilul (calea este fixă) și se refolosește cât timp e validă,
+   // ca browserul să poată afișa poza din cache în loc să o descarce din nou la fiecare deschidere.
+   const cached=readCachedUrl(userId);
+   const early=cached?null:signed(avatarPath(userId));
    const [profile,priv,roles]=await Promise.all([
     client.from('profiles').select(PUBLIC_COLUMNS).eq('id',userId).maybeSingle(),
     client.from('profiles_private').select(PRIVATE_COLUMNS).eq('id',userId).maybeSingle(),
@@ -57,14 +69,19 @@ export function createAccountApi(client:SupabaseClient):AccountApi{
    ]);
    fail(profile.error);fail(priv.error);fail(roles.error);
    const p=profile.data as PublicProfile|null;
-   return {profile:p,priv:priv.data as PrivateProfile|null,roles:(roles.data??[]).map(r=>r.role).filter(isRealRole),avatarUrl:await signed(p?.avatar_path??null)};
+   let avatarUrl:string|undefined;
+   if(p?.avatar_path){
+    if(cached&&cached.path===p.avatar_path&&cached.stamp===p.updated_at)avatarUrl=cached.url;
+    else{avatarUrl=p.avatar_path===avatarPath(userId)&&early?await early:await signed(p.avatar_path);if(avatarUrl)writeCachedUrl(userId,{path:p.avatar_path,stamp:p.updated_at,url:avatarUrl,exp:Date.now()+SIGN_SECONDS*1000})}
+   }else clearCachedUrl(userId);
+   return {profile:p,priv:priv.data as PrivateProfile|null,roles:(roles.data??[]).map(r=>r.role).filter(isRealRole),avatarUrl};
   },
   async completeProfile(name,role){const {error}=await client.rpc('complete_profile',{p_display_name:name.trim(),p_role:role});fail(error)},
   async save(userId,form,investor,photo){
    let avatar:{avatar_path:string|null}|object={};
    if(photo.kind==='set'){
     const blob=await dataUrlToBlob(photo.dataUrl);
-    const {error}=await client.storage.from(AVATAR_BUCKET).upload(avatarPath(userId),blob,{upsert:true,contentType:'image/jpeg',cacheControl:'60'});
+    const {error}=await client.storage.from(AVATAR_BUCKET).upload(avatarPath(userId),blob,{upsert:true,contentType:'image/jpeg',cacheControl:CACHE_SECONDS});
     fail(error);avatar={avatar_path:avatarPath(userId)};
    }else if(photo.kind==='remove'){
     const {error}=await client.storage.from(AVATAR_BUCKET).remove([avatarPath(userId)]);
@@ -77,7 +94,7 @@ export function createAccountApi(client:SupabaseClient):AccountApi{
   },
   async savePhoto(userId,dataUrl){
    const blob=await dataUrlToBlob(dataUrl);
-   const {error}=await client.storage.from(AVATAR_BUCKET).upload(avatarPath(userId),blob,{upsert:true,contentType:'image/jpeg',cacheControl:'60'});
+   const {error}=await client.storage.from(AVATAR_BUCKET).upload(avatarPath(userId),blob,{upsert:true,contentType:'image/jpeg',cacheControl:CACHE_SECONDS});
    fail(error);
    const a=await client.from('profiles').update({avatar_path:avatarPath(userId)}).eq('id',userId).select('id');
    fail(a.error);if(!a.data?.length)throw {code:'42501'};

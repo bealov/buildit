@@ -184,6 +184,21 @@ test('account api: savePhoto uploads only the framed photo to the own folder and
  assert.ok(calls.filter(c=>c.includes('.eq(')).every(c=>c.endsWith('=A)')));
 });
 
+test('account api: the signed avatar URL is reused while valid, so the browser can cache the photo',async()=>{
+ const store=new Map<string,string>();const prev=globalThis.localStorage;
+ Object.defineProperty(globalThis,'localStorage',{configurable:true,value:{getItem:(k:string)=>store.get(k)??null,setItem:(k:string,v:string)=>store.set(k,v),removeItem:(k:string)=>store.delete(k)}});
+ try{
+  const {calls,client}=fakeClient();
+  // @ts-expect-error client simulat parțial
+  const api=createAccountApi(client);
+  const first=await api.load('A'),second=await api.load('A');
+  assert.equal(second.avatarUrl,first.avatarUrl,'aceeași adresă la a doua deschidere');
+  assert.equal(calls.filter(c=>c.startsWith('storage.avatars.sign')).length,1,'o singură semnare');
+  store.clear();await api.load('A');
+  assert.equal(calls.filter(c=>c.startsWith('storage.avatars.sign')).length,2,'fără cache se semnează din nou');
+ }finally{Object.defineProperty(globalThis,'localStorage',{configurable:true,value:prev})}
+});
+
 test('account api: an update blocked by RLS (0 rows) is reported as an error',async()=>{
  const {client}=fakeClient({updateRows:0});
  // @ts-expect-error client simulat parțial
