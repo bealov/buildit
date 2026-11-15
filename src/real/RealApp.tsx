@@ -3,7 +3,7 @@
 import React,{useEffect,useState,type ReactNode} from 'react';
 import {Home,Compass,Layers,Heart,ShoppingBag,Trophy,User,ChevronLeft,ArrowUpRight,ArrowRight,Check,LogOut,SlidersHorizontal,Sparkles} from 'lucide-react';
 import {Button,Heading,Section,Empty,Modal,Field,Toggle} from '../ui';
-import {Avatar,PhotoEditor} from '../ProfilePhoto';
+import {Avatar,PhotoEditor,forgetPhotoOriginal} from '../ProfilePhoto';
 import {t} from '../locales';
 import {industries,stages} from '../model';
 import type {RealConfig} from './config.ts';
@@ -246,7 +246,7 @@ function ProfileSettings({user,account,api,investor,saved,photoSaved}:{user:Sess
  const preview={name:form.display_name||account.profile?.display_name||'',photo:photo.kind==='set'?photo.dataUrl:photo.kind==='remove'?undefined:uploaded??account.avatarUrl};
  const set=<K extends keyof ProfileForm>(k:K)=>(v:ProfileForm[K])=>setForm(f=>({...f,[k]:v}));
  const submit=async(e:React.FormEvent)=>{e.preventDefault();if(busy)return;const problem=profileFormProblem(form,investor);if(problem){setError(problem);return}
-  setBusy(true);setError('');try{await api.save(user.id,form,investor,photo);await saved()}catch(err){setError(dataErrorMessage(errCode(err)));setBusy(false)}};
+  setBusy(true);setError('');try{await api.save(user.id,form,investor,photo);if(photo.kind==='remove')void forgetPhotoOriginal('real:'+user.id);await saved()}catch(err){setError(dataErrorMessage(errCode(err)));setBusy(false)}};
  return <form className="panel" onSubmit={submit} noValidate>
   <PhotoEditor note="JPG, PNG sau WebP · maximum 5 MB. Încărcăm o miniatură vizibilă doar utilizatorilor autentificați." profile={preview} onChange={p=>setPhoto(p?{kind:'set',dataUrl:p}:{kind:'remove'})} onBusy={setPhotoBusy} originalKey={'real:'+user.id} save={async p=>{await api.savePhoto(user.id,p);setUploaded(p);setPhoto({kind:'keep'});photoSaved?.()}}/>
   <h3>Profil public</h3><p className="caption">Vizibil doar utilizatorilor autentificați BuildIT.</p>
