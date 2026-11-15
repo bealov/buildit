@@ -36,6 +36,8 @@ export type AccountApi={
  load(userId:string):Promise<Account>;
  completeProfile(name:string,role:RealRole):Promise<void>;
  save(userId:string,form:ProfileForm,investor:boolean,photo:PhotoChange):Promise<void>;
+ /** Încarcă fotografia deja încadrată (JPEG) și o setează pe profil, fără alte câmpuri. */
+ savePhoto(userId:string,dataUrl:string):Promise<void>;
  activateRole(userId:string,role:RealRole):Promise<void>;
 };
 
@@ -72,6 +74,13 @@ export function createAccountApi(client:SupabaseClient):AccountApi{
    fail(a.error);if(!a.data?.length)throw {code:'42501'};
    const b=await client.from('profiles_private').update(privateUpdate(form,investor)).eq('id',userId).select('id');
    fail(b.error);if(!b.data?.length)throw {code:'42501'};
+  },
+  async savePhoto(userId,dataUrl){
+   const blob=await dataUrlToBlob(dataUrl);
+   const {error}=await client.storage.from(AVATAR_BUCKET).upload(avatarPath(userId),blob,{upsert:true,contentType:'image/jpeg',cacheControl:'60'});
+   fail(error);
+   const a=await client.from('profiles').update({avatar_path:avatarPath(userId)}).eq('id',userId).select('id');
+   fail(a.error);if(!a.data?.length)throw {code:'42501'};
   },
   async activateRole(userId,role){const {error}=await client.from('profile_roles').insert({user_id:userId,role});fail(error)}
  };

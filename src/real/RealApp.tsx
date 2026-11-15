@@ -160,13 +160,13 @@ type SignedInProps={user:SessionUser;deps:RealDeps;route:string;nav:(r:string)=>
 function SignedIn(props:SignedInProps){
  const {user,deps}=props;
  const [account,setAccount]=useState<Account|null>(null),[status,setStatus]=useState<'loading'|'ready'|'error'>('loading');
- const reload=async()=>{setStatus('loading');try{setAccount(await deps.account.load(user.id));setStatus('ready')}catch{setStatus('error')}};
+ const reload=async(quiet=false)=>{if(!quiet)setStatus('loading');try{setAccount(await deps.account.load(user.id));setStatus('ready')}catch{if(!quiet)setStatus('error')}};
  useEffect(()=>{void reload()},[]);
  return <AccountView {...props} account={account} status={status} reload={reload}/>;
 }
 
 /** Afișarea contului, separată de încărcare pentru a putea fi testată. */
-export function AccountView({user,deps,route,nav,openDemo,recovery,endRecovery,banner,clearBanner,signOut,account,status,reload}:SignedInProps&{account:Account|null;status:'loading'|'ready'|'error';reload:()=>Promise<void>}){
+export function AccountView({user,deps,route,nav,openDemo,recovery,endRecovery,banner,clearBanner,signOut,account,status,reload}:SignedInProps&{account:Account|null;status:'loading'|'ready'|'error';reload:(quiet?:boolean)=>Promise<void>}){
  const [,setModeVersion]=useState(0); // modul se citește din preferința locală la fiecare randare
  const [modal,setModal]=useState<null|'account'|'role'>(null),[toast,setToast]=useState('');
  useEffect(()=>{if(!toast)return;const id=setTimeout(()=>setToast(''),2600);return()=>clearTimeout(id)},[toast]);
@@ -196,7 +196,7 @@ export function AccountView({user,deps,route,nav,openDemo,recovery,endRecovery,b
   <div className="quick-grid"><Quick name="Editează profilul" icon={<User size={20}/>} onClick={()=>nav('settings')}/><Quick name="Preferințe și contact" icon={<SlidersHorizontal size={20}/>} onClick={()=>nav('settings')}/></div>
   <RolesPanel both={both} mode={mode} missing={missing} setMode={setMode} askActivate={()=>setModal('role')}/>
   <button className="settings-row" onClick={()=>openDemo('home')}>Deschide modul demo <ArrowUpRight size={18}/></button><button className="settings-row" onClick={signOut}><LogOut size={18}/> Ieși din cont</button></>;
- else if(route==='settings')body=<><Heading title="Profil și preferințe" eyebrow={mode==='investor'?'CONT INVESTITOR':'CONT CREATOR'}/><ProfileSettings user={user} account={account} api={deps.account} investor={roles.includes('investor')} saved={async()=>{await reload();notify('Profil și preferințe salvate.');nav('profile')}}/><RolesPanel both={both} mode={mode} missing={missing} setMode={setMode} askActivate={()=>setModal('role')}/></>;
+ else if(route==='settings')body=<><Heading title="Profil și preferințe" eyebrow={mode==='investor'?'CONT INVESTITOR':'CONT CREATOR'}/><ProfileSettings user={user} account={account} api={deps.account} investor={roles.includes('investor')} saved={async()=>{await reload();notify('Profil și preferințe salvate.');nav('profile')}} photoSaved={()=>{notify('Fotografia de profil a fost salvată.');void reload(true)}}/><RolesPanel both={both} mode={mode} missing={missing} setMode={setMode} askActivate={()=>setModal('role')}/></>;
  else body=<Unavailable route={route} openDemo={openDemo}/>;
 
  return <Shell header={header} nav={bottom}>
@@ -238,16 +238,17 @@ function NewPassword({auth,done}:{auth:AuthApi;done:()=>void}){
  return <><Heading title={'Alege o\nparolă nouă.'} eyebrow="RESETAREA PAROLEI"/><form className="panel" onSubmit={submit} noValidate><Input label="Parolă nouă (minimum 10 caractere)" type="password" value={password} onChange={setPassword} autoComplete="new-password"/><Input label="Confirmă parola nouă" type="password" value={confirm} onChange={setConfirm} autoComplete="new-password"/>{error&&<p className="error" role="alert">{error}</p>}<Button type="submit" disabled={busy}>{busy?'Se salvează…':'Salvează parola'}</Button></form></>;
 }
 
-function ProfileSettings({user,account,api,investor,saved}:{user:SessionUser;account:Account;api:AccountApi;investor:boolean;saved:()=>Promise<void>}){
+function ProfileSettings({user,account,api,investor,saved,photoSaved}:{user:SessionUser;account:Account;api:AccountApi;investor:boolean;saved:()=>Promise<void>;photoSaved?:()=>void}){
  const [form,setForm]=useState<ProfileForm>(()=>formFromAccount(account));
  const [photo,setPhoto]=useState<PhotoChange>({kind:'keep'}),[photoBusy,setPhotoBusy]=useState(false);
+ const [uploaded,setUploaded]=useState<string>(); // fotografia încadrată, deja încărcată din fereastra de încadrare
  const [error,setError]=useState(''),[busy,setBusy]=useState(false);
- const preview={name:form.display_name||account.profile?.display_name||'',photo:photo.kind==='set'?photo.dataUrl:photo.kind==='remove'?undefined:account.avatarUrl};
+ const preview={name:form.display_name||account.profile?.display_name||'',photo:photo.kind==='set'?photo.dataUrl:photo.kind==='remove'?undefined:uploaded??account.avatarUrl};
  const set=<K extends keyof ProfileForm>(k:K)=>(v:ProfileForm[K])=>setForm(f=>({...f,[k]:v}));
  const submit=async(e:React.FormEvent)=>{e.preventDefault();if(busy)return;const problem=profileFormProblem(form,investor);if(problem){setError(problem);return}
   setBusy(true);setError('');try{await api.save(user.id,form,investor,photo);await saved()}catch(err){setError(dataErrorMessage(errCode(err)));setBusy(false)}};
  return <form className="panel" onSubmit={submit} noValidate>
-  <PhotoEditor note="JPG, PNG sau WebP · maximum 5 MB. Încărcăm o miniatură vizibilă doar utilizatorilor autentificați." profile={preview} onChange={p=>setPhoto(p?{kind:'set',dataUrl:p}:{kind:'remove'})} onBusy={setPhotoBusy}/>
+  <PhotoEditor note="JPG, PNG sau WebP · maximum 5 MB. Încărcăm o miniatură vizibilă doar utilizatorilor autentificați." profile={preview} onChange={p=>setPhoto(p?{kind:'set',dataUrl:p}:{kind:'remove'})} onBusy={setPhotoBusy} save={async p=>{await api.savePhoto(user.id,p);setUploaded(p);setPhoto({kind:'keep'});photoSaved?.()}}/>
   <h3>Profil public</h3><p className="caption">Vizibil doar utilizatorilor autentificați BuildIT.</p>
   <Field label="Nume" value={form.display_name} onChange={set('display_name')}/><Field label="Descriere profesională" type="textarea" value={form.bio} onChange={set('bio')}/><Field label="Locație" value={form.city} onChange={set('city')}/><Field label="Companie" value={form.company} onChange={set('company')}/><Field label="Industrie de interes" value={form.industries} options={['',...industries]} onChange={set('industries')}/><Field label="Obiective și interese" type="textarea" value={form.objectives} onChange={set('objectives')}/>
   <h3>Date private</h3><p className="caption">Vizibile doar ție.</p>

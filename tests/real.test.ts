@@ -172,6 +172,18 @@ test('account api: every request is scoped to the signed-in user; photo goes to 
  await api.completeProfile(' Ana ','creator');assert.ok(calls.includes('rpc.complete_profile(Ana,creator)'));
 });
 
+test('account api: savePhoto uploads only the framed photo to the own folder and sets avatar_path',async()=>{
+ const {calls,client}=fakeClient();
+ // @ts-expect-error client simulat parțial
+ const api=createAccountApi(client);
+ globalThis.fetch=(async()=>({blob:async()=>new Blob(['x'],{type:'image/jpeg'})})) as unknown as typeof fetch;
+ await api.savePhoto('A','data:image/jpeg;base64,eA==');
+ assert.deepEqual(calls.filter(c=>c.startsWith('storage.')),[`storage.avatars.upload(${avatarPath('A')})`],'o singură încărcare, în folderul propriu');
+ assert.ok(calls.includes('profiles.update(avatar_path)'),'doar avatar_path, fără alte câmpuri');
+ assert.ok(!calls.some(c=>c.startsWith('profiles_private')),'datele private nu sunt atinse');
+ assert.ok(calls.filter(c=>c.includes('.eq(')).every(c=>c.endsWith('=A)')));
+});
+
 test('account api: an update blocked by RLS (0 rows) is reported as an error',async()=>{
  const {client}=fakeClient({updateRows:0});
  // @ts-expect-error client simulat parțial
