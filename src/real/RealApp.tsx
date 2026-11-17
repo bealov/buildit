@@ -9,7 +9,7 @@ import {t} from '../locales';
 import {industries,stages} from '../model';
 import type {RealConfig} from './config.ts';
 import {cleanedUrl,isAuthHash,parseAuthCallback} from './authCallback.ts';
-import {authErrorMessage,dataErrorMessage,nameProblem,passwordProblem,profileFormProblem,validEmail,type ProfileForm} from './validation.ts';
+import {authErrorMessage,dataErrorMessage,loadErrorInfo,nameProblem,passwordProblem,profileFormProblem,validEmail,type ProfileForm} from './validation.ts';
 import {clearStoredMode,otherRole,readStoredMode,resolveMode,roleLabel,writeStoredMode,type RealRole} from './roles.ts';
 import {formFromAccount,storedParticipation,type Account,type AccountApi,type PhotoChange} from './account.ts';
 import type {AuthApi,AuthError,SessionUser} from './auth.ts';
@@ -86,6 +86,7 @@ export function RealApp({config,openDemo,deps:injected}:{config:RealConfig;openD
     if(!active)return;setUser(current);
     unsubscribe=d.auth.onChange((event,next)=>{
      if(event==='PASSWORD_RECOVERY')setRecovery(true);
+     if(event==='SIGNED_IN')setBanner(null); // mesajul „Te-ai deconectat” nu rămâne după o nouă autentificare
      if(event==='SIGNED_OUT'){setRecovery(false);clearStoredMode(storage())}
      setUser(prev=>prev?.id===next?.id?prev:next);
     });
@@ -161,13 +162,14 @@ type SignedInProps={user:SessionUser;deps:RealDeps;route:string;nav:(r:string)=>
 function SignedIn(props:SignedInProps){
  const {user,deps}=props;
  const [account,setAccount]=useState<Account|null>(null),[status,setStatus]=useState<'loading'|'ready'|'error'>('loading');
- const reload=async(quiet=false)=>{if(!quiet)setStatus('loading');try{setAccount(await deps.account.load(user.id));setStatus('ready')}catch{if(!quiet)setStatus('error')}};
+ const [loadError,setLoadError]=useState<{code:string;hint:string}|null>(null);
+ const reload=async(quiet=false)=>{if(!quiet){setStatus('loading');setLoadError(null)}try{setAccount(await deps.account.load(user.id));setStatus('ready')}catch(e){if(quiet)return;const info=loadErrorInfo(e);console.warn('BuildIT: profilul nu a putut fi încărcat (cod '+info.code+').');setLoadError(info);setStatus('error')}};
  useEffect(()=>{void reload()},[]);
- return <AccountView {...props} account={account} status={status} reload={reload}/>;
+ return <AccountView {...props} account={account} status={status} reload={reload} loadError={loadError}/>;
 }
 
 /** Afișarea contului, separată de încărcare pentru a putea fi testată. */
-export function AccountView({user,deps,route,nav,openDemo,recovery,endRecovery,banner,clearBanner,signOut,account,status,reload}:SignedInProps&{account:Account|null;status:'loading'|'ready'|'error';reload:(quiet?:boolean)=>Promise<void>}){
+export function AccountView({user,deps,route,nav,openDemo,recovery,endRecovery,banner,clearBanner,signOut,account,status,reload,loadError=null}:SignedInProps&{account:Account|null;status:'loading'|'ready'|'error';reload:(quiet?:boolean)=>Promise<void>;loadError?:{code:string;hint:string}|null}){
  const [,setModeVersion]=useState(0); // modul se citește din preferința locală la fiecare randare
  const [modal,setModal]=useState<null|'account'|'role'>(null),[toast,setToast]=useState('');
  useEffect(()=>{if(!toast)return;const id=setTimeout(()=>setToast(''),2600);return()=>clearTimeout(id)},[toast]);
@@ -188,7 +190,7 @@ export function AccountView({user,deps,route,nav,openDemo,recovery,endRecovery,b
  let body:ReactNode;
  if(recovery)body=<NewPassword auth={deps.auth} done={()=>{endRecovery();notify('Parola a fost schimbată.');nav('home')}}/>;
  else if(status==='loading')body=<Empty>Se încarcă profilul…</Empty>;
- else if(status==='error'||!account)body=<Empty>Profilul nu a putut fi încărcat.<Button onClick={()=>void reload()}>Încearcă din nou</Button><Button secondary onClick={signOut}>Ieși din cont</Button></Empty>;
+ else if(status==='error'||!account)body=<Empty>Profilul nu a putut fi încărcat.{loadError&&<><br/><small>{loadError.hint}</small><br/><small>Cod tehnic: {loadError.code}</small></>}<Button onClick={()=>void reload()}>Încearcă din nou</Button><Button secondary onClick={signOut}>Ieși din cont</Button></Empty>;
  else if(!profile)body=<CompleteProfile account={deps.account} done={async()=>{await reload();notify('Profil creat.');nav('home')}} signOut={signOut}/>;
  else if(route==='home')body=<><Heading title={`Bună, ${first} 👋`} eyebrow={mode==='investor'?'O NOUĂ ZI. NOI POSIBILITĂȚI.':'SPAȚIUL TĂU DE CREȘTERE'}/><p className="intro">Contul tău real este activ. Profilul și rolurile sunt salvate în siguranță, separat de datele demo.</p>
   <div className="notice">Etapa 1 · Cont real: profil, fotografie, roluri și setări. Proiectele, Match-ul, Marketplace-ul și clasamentul pentru conturile reale urmează. Până atunci le poți explora în modul demo, cu date fictive.</div>

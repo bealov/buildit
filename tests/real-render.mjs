@@ -43,6 +43,7 @@ const incomplete=view('home',['creator'],{account:{profile:null,priv:null,roles:
 // Încărcare și eroare
 has(view('home',['creator'],{status:'loading',account:null}),'Se încarcă profilul','încărcare');
 has(view('home',['creator'],{status:'error',account:null}),'Profilul nu a putut fi încărcat','eroare');
+{const h=view('home',['creator'],{status:'error',account:null,loadError:{code:'rețea',hint:'Serverul nu răspunde.'}});has(h,'Cod tehnic: rețea','eroare cu cod');has(h,'Serverul nu răspunde.','eroare cu cod')}
 // Resetarea parolei are prioritate
 has(view('home',['creator'],{recovery:true}),'Alege o','recuperare');
 // Preferința de mod a altui cont nu este folosită

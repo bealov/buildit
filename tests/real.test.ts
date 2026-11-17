@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {readFileSync,readdirSync} from 'node:fs';
 import {readRealConfig,isSecretKey,configProblemMessage} from '../src/real/config.ts';
 import {parseAuthCallback,cleanedUrl,redirectUrl,isAuthHash} from '../src/real/authCallback.ts';
-import {passwordProblem,nameProblem,linkProblem,parseBudget,profileFormProblem,authErrorMessage,validEmail} from '../src/real/validation.ts';
+import {loadErrorInfo,passwordProblem,nameProblem,linkProblem,parseBudget,profileFormProblem,authErrorMessage,validEmail} from '../src/real/validation.ts';
 import {resolveMode,readStoredMode,writeStoredMode,clearStoredMode,readAppMode,MODE_KEY} from '../src/real/roles.ts';
 import {createAccountApi,profileUpdate,privateUpdate,formFromAccount,emptyForm,avatarPath} from '../src/real/account.ts';
 import {createAuthApi} from '../src/real/auth.ts';
@@ -85,6 +85,19 @@ test('validation: auth errors do not reveal whether an email has an account',()=
  assert.equal(authErrorMessage('invalid_credentials',400),'Email sau parolă incorectă.');
  for(const code of ['user_not_found','user_already_exists','email_exists'])assert.equal(authErrorMessage(code,400),'Operațiunea nu a reușit. Încearcă din nou.');
  assert.ok(authErrorMessage(undefined,429).includes('Prea multe'));
+});
+
+test('validation: profile load errors give a short code and a hint, without personal data',()=>{
+ assert.equal(loadErrorInfo({name:'TypeError',message:'Failed to fetch'}).code,'rețea');
+ assert.equal(loadErrorInfo({message:'TypeError: Failed to fetch',code:''}).code,'rețea');
+ assert.match(loadErrorInfo({code:'PGRST301',message:'JWT expired'}).hint,/autentifică-te din nou/);
+ assert.match(loadErrorInfo({code:'PGRST002'}).hint,/pauză/);
+ assert.match(loadErrorInfo({status:503}).hint,/indisponibil/);
+ assert.match(loadErrorInfo({code:'PGRST205'}).hint,/Data API/);
+ assert.equal(loadErrorInfo({code:'42501'}).code,'42501');
+ assert.match(loadErrorInfo({code:'42703',message:'column profiles.wants_to_develop does not exist'}).hint,/migrările noi/);
+ assert.equal(loadErrorInfo(null).code,'necunoscut');
+ assert.ok(!loadErrorInfo({code:'X',message:'ana@test.invalid'}).hint.includes('ana@'));
 });
 
 // ---------------------------------------------------------------------------

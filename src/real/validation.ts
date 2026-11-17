@@ -73,6 +73,20 @@ export function authErrorMessage(code?:string|null,status?:number){
  return 'Operațiunea nu a reușit. Încearcă din nou.';
 }
 
+/** Cauza unei erori la încărcarea profilului: un cod scurt (fără date personale) și o explicație. */
+export function loadErrorInfo(e:unknown):{code:string;hint:string}{
+ const err=(e??{}) as {code?:unknown;status?:unknown;message?:unknown;name?:unknown};
+ const message=typeof err.message==='string'?err.message:'';
+ const raw=String(err.code||err.status||'');
+ if(!raw&&(err.name==='TypeError'||/fetch|network|load failed/i.test(message)))return {code:'rețea',hint:'Serverul nu răspunde. Proiectul Supabase poate fi pus pe pauză sau conexiunea la internet este întreruptă.'};
+ if(raw==='PGRST301'||raw==='PGRST303'||raw==='401'||/jwt/i.test(message))return {code:raw||'401',hint:'Sesiunea nu mai este valabilă. Ieși din cont și autentifică-te din nou.'};
+ if(raw==='42501'||raw==='403')return {code:raw,hint:'Accesul a fost refuzat de regulile bazei de date.'};
+ if(raw==='PGRST002'||raw==='PGRST000'||/^5\d\d$/.test(raw))return {code:raw,hint:'Serviciul Supabase este indisponibil momentan (de exemplu, proiectul este pus pe pauză sau pornește). Încearcă din nou peste un minut.'};
+ if(raw==='42703'||raw==='PGRST204')return {code:raw,hint:'Baza de date nu are încă ultimele modificări ale profilului. Aplică în Supabase migrările noi din supabase/migrations, în ordine.'};
+ if(raw==='PGRST205'||raw==='42P01')return {code:raw,hint:'Tabelele profilului nu sunt disponibile prin API. Verifică migrarea și setările Data API.'};
+ return {code:raw||'necunoscut',hint:'Încearcă din nou. Dacă problema continuă, trimite codul de mai sus.'};
+}
+
 /** Mesaje pentru erorile bazei de date (coduri Postgres/PostgREST). */
 export function dataErrorMessage(code?:string|null){
  if(code==='42501'||code==='PGRST301')return 'Nu ai permisiunea pentru această operațiune.';
