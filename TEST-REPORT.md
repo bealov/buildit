@@ -114,3 +114,10 @@ Migrare nouă: `supabase/migrations/20261115000000_creator_participation.sql` (m
 - Testele de interfață și E2E au folosit un serviciu simulat; regulile reale sunt verificate local în `test:db` și, după aplicarea migrării, în `rls-remote.mjs`.
 - Datele de participare sunt publice pentru utilizatorii autentificați, ca restul profilului public. Matching-ul care le va folosi nu este implementat.
 
+
+## Incident buildit-dev · 17 noiembrie 2026 — profilul nu se încărca
+
+- Simptom: după autentificare, pe Vercel Preview apărea „Profilul nu a putut fi încărcat” pentru conturile de test.
+- Cauză: codul de pe ramură (secțiunea „Cum vrei să participi”) cerea coloane noi din `profiles`, dar migrarea `20261115000000_creator_participation.sql` nu fusese aplicată pe buildit-dev (verificat în SQL Editor: 0 din 5 coloane). Reprodus local: cererea eșua cu `42703 column "wants_to_develop" does not exist`.
+- Rezolvare: migrarea a fost aplicată pe buildit-dev; profilurile se încarcă din nou (confirmat manual). Datele, rolurile și fotografiile nu au fost afectate.
+- Prevenire: ecranul de eroare afișează acum un cod tehnic și o explicație (pentru coloane lipsă: „aplică migrările noi, în ordine”). Regula de lucru: orice migrare nouă din `supabase/migrations` se aplică pe buildit-dev înainte de testarea Preview-ului care o folosește.
