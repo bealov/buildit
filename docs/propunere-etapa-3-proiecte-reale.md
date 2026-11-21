@@ -1,7 +1,33 @@
 # Propunere · Etapa 3: proiecte reale (ciorne private și proiecte publicate)
 
-Stare: **propunere, neimplementată.** Pregătită pe 21 noiembrie 2026, pe ramura PR #2. Deciziile din
-secțiunea 5 trebuie confirmate înainte de implementare.
+Stare: **implementată pe ramura PR #2 (22 noiembrie 2026)**, cu deciziile finale de mai jos, care au
+prioritate față de recomandările inițiale din secțiunile 2–5. Ghid de aplicare și verificare:
+[etapa-3-proiecte-reale.md](etapa-3-proiecte-reale.md).
+
+## Decizii finale (confirmate)
+
+| Subiect | Decizie |
+|---|---|
+| Cine creează | Doar conturile cu rol Creator; maximum 20 de proiecte pe cont, ciorne incluse. Persoanele care vor doar să se alăture nu sunt obligate să creeze un proiect. |
+| Vizibilitate | Ciornele: doar proprietarul. Publicate: utilizatorii autentificați. Vizitatorii: nimic. |
+| Proprietate | Doar proprietarul editează, publică, retrage sau șterge; proprietarul nu poate fi schimbat. Proiectul publicat arată numele, fotografia și profilul public al proprietarului, fără email sau date private. |
+| Obligatorii la publicare | Titlu, descriere scurtă, industrie, stadiu (**Idee / În dezvoltare / Deja lansat**), locație (oraș **sau „Remote / Online”**), **ce caută proiectul: colegi, parteneri și/sau investiție** (selecție multiplă). Ciorna poate fi incompletă. |
+| Finanțe | EUR, max. 2 zecimale; 0 ≠ necompletat ≠ „Nu am estimat încă” (nebifat implicit). Toate datele financiare sunt **private**. Public: doar „Investiție căutată: … EUR” sau „Investiție de stabilit”, numai dacă proiectul caută investiție (publicarea fără sumă este permisă). Debifarea investiției nu șterge suma. Fără opțiunea de publicare a altor repere financiare în această versiune. |
+| Editare publicat | Versiunea vizibilă se schimbă doar după confirmarea „Actualizează proiectul publicat”; „Renunță” păstrează versiunea anterioară; fără sistem separat de versiuni. Protecție la editare simultană, cu păstrarea modificărilor în formular. |
+| Retragere / ștergere | „Retrage din publicare” → ciornă privată, fără pierderi. Ștergere definitivă doar pentru ciorne, cu confirmare. |
+| Documente și linkuri | Încărcarea documentelor este amânată. Linkurile către plan sunt private, inclusiv după publicare. Fără partajarea planului. |
+| Marketplace | Bifa „Vreau să vând planul în Marketplace” este eliminată din proiectele reale; Marketplace rămâne independent. |
+| Amânate | Descoperă proiecte, colaborări, interesul investitorilor, clasament, Boost, statistici. Fără butoane pentru acțiuni nefuncționale. |
+| Test pe buildit-dev | Autorizat: o ciornă temporară pentru contul A, identificată prin ID și ștearsă la final; publicarea și restul se testează local/simulat sau manual. |
+
+## Implementare (pe scurt)
+
+- Migrarea `20261122000000_projects.sql`: `projects` (informații care pot deveni publice) și `project_private` (finanțe, linkuri; doar proprietarul). Suma publică `investment_public` este calculată de baza de date și nu poate fi scrisă de utilizatori. RLS, permisiuni pe coloane, validarea publicării (constrângere), limita de 20 (trigger cu blocare), proprietar și dată de creare imuabile, valori nepermise respinse (nu eliminate în tăcere).
+- `save_project` / `set_project_status`: salvare atomică (toate modificările într-o tranzacție), cu drepturile utilizatorului, și cod `PT409` la conflict.
+- Interfață: `src/real/projects.ts`, `src/real/ProjectPages.tsx`; integrare în `src/real/RealApp.tsx`.
+
+---
+
 
 Scop: Creatorii își pot crea, salva și edita propriile proiecte în Supabase, cu o separare clară între
 **ciorne private** și **proiecte publicate**. Etapa pregătește datele pentru „Descoperă proiecte” și

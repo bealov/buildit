@@ -159,3 +159,32 @@ Funcție nouă în modul Creator; migrare nouă `20261121000000_discover_people.
 ### Limite
 
 - Serverul din `test:e2e` imită API-ul; regulile reale ale funcției sunt testate în `test:db`, pe o simulare locală a schemelor Supabase.
+
+## Proiecte reale (etapa 3) · 22 noiembrie 2026
+
+Implementare pe PR #2 conform deciziilor finale din `docs/propunere-etapa-3-proiecte-reale.md`. Migrare nouă: `20261122000000_projects.sql`. Ghid: `docs/etapa-3-proiecte-reale.md`.
+
+### Executate și trecute (local, fără buildit-dev)
+
+| Comandă | Rezultat |
+|---|---|
+| `npm run lint` | 0 erori |
+| `npm run build` | reușit |
+| `npm test` | 62/62 teste unitare; 63 verificări de randare demo; 526 verificări de randare pentru conturile reale |
+| `npm run test:db` | 179/179 (Postgres 16 local, UTF-8, simulare a schemelor Supabase), cu expunerea automată dezactivată și activată |
+| `npm run test:e2e` | 31/31 pași în Chromium, la 390 px (telefon) și la 1366 px (laptop), cu server Supabase **simulat** |
+
+**Baza de date — 51 de verificări noi pentru proiecte**, cu proprietarul A, alt Creator F, contul doar Investitor B și vizitatorul: RLS activ; vizitatorul nu poate citi sau salva; contul fără rol Creator nu poate crea; ciorna incompletă se salvează; 0, „Nu am estimat încă” și necompletat rămân distincte; publicarea incompletă este refuzată și proiectul rămâne ciornă; F nu vede ciorna, nu vede finanțele și linkurile private nici după publicare, nu poate salva, schimba starea, modifica sau șterge; Investitorul vede proiectul publicat; proprietarul nu poate fi schimbat, suma publică nu poate fi scrisă direct, nu se poate crea un proiect pentru altcineva, un proiect publicat nu poate fi șters; varianta „Remote / Online” fără oraș; publicarea fără „ce caută” sau fără oraș și fără Remote este refuzată; cu oraș este permisă; „ce caută” fără dubluri, iar valorile nepermise sunt respinse (nu eliminate în tăcere — problemă găsită de test și corectată); investiție cu sumă → sumă publică; investiție „de stabilit” sau fără sumă → publicare permisă, fără sumă publică; fără investiție → suma nu este publică, dar rămâne salvată privat; mai mult de 2 zecimale, sume negative, linkuri nepermise și stadii nepermise sunt respinse; salvarea respinsă nu modifică nimic (salvare atomică); salvarea cu o versiune veche este refuzată (`PT409`); retragerea → ciornă, fără pierderea datelor, invizibilă pentru ceilalți; ștergerea ciornei elimină și datele private; limita de 20 (al 21-lea refuzat, `PT422`, inclusiv într-o singură tranzacție).
+
+**Browser — 9 pași noi** (server simulat): ciornă incompletă salvată și păstrată după reîncărcare; publicare incompletă refuzată cu lista câmpurilor; completare cu Remote, 0, „Nu am estimat încă”, câmp necompletat, validarea zecimalelor, link, Colegi + Investiție și publicare; alt cont vede proiectul, investiția și proprietarul („Vezi profilul”), fără finanțe, linkuri sau acțiuni; editarea proiectului publicat devine vizibilă doar după „Actualizează proiectul publicat”, iar debifarea investiției ascunde suma public, dar o păstrează privat; „Renunță” păstrează versiunea anterioară; conflict între două dispozitive: avertizare, modificările rămân în formular, „Încarcă versiunea salvată” și „Salvează modificările mele”; retragere (alt cont nu mai vede proiectul) și ștergerea ciornei; limita de 20 dezactivează crearea.
+
+### Pregătite, încă nerulate pe buildit-dev
+
+- Aplicarea migrării `20261122000000_projects.sql` și interogarea de verificare din ghid (așteptat: `true, 7, true, false, false, false, false`).
+- `verifica-buildit-dev`: 20 de verificări noi pentru proiecte, cu **o singură ciornă temporară** pentru contul A, identificată prin ID și ștearsă la final; verificare finală a numărului de proiecte existente. Fără publicare pe proiectul real. Verificate pe un server simulat: ciorna temporară a fost ștearsă, iar starea finală a fost identică cu cea inițială.
+- Verificarea manuală pe Vercel Preview (pașii din ghid), inclusiv conflictul real între laptop și telefon.
+
+### Limite
+
+- Serverul din `test:e2e` imită API-ul; regulile reale sunt testate în `test:db`, pe o simulare locală a schemelor Supabase.
+- Limita de 20 și publicarea nu sunt testate automat pe buildit-dev (ar necesita date suplimentare); sunt acoperite local.

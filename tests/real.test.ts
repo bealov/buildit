@@ -364,3 +364,109 @@ test('people api: public profile detail reads only public columns and known role
  // @ts-expect-error client simulat parțial
  assert.equal(await createPeopleApi(empty).person('nimeni'),null);
 });
+
+// ---------------------------------------------------------------------------
+// Proiecte reale
+import {parseAmount,formatProblems,publishMissing,savePayload,emptyProjectForm,formFromProject,investmentLabel,finDisplay,locationLabel,projectErrorMessage,createProjectsApi,FIN_FIELDS,TEXT_FIELDS,MAX_PROJECTS} from '../src/real/projects.ts';
+
+const pform=(extra:object={})=>({...emptyProjectForm(),...extra});
+test('projects: amounts keep 0, empty and „not estimated” distinct; max two decimals',()=>{
+ assert.deepEqual(parseAmount(''),{value:null,problem:null});
+ assert.deepEqual(parseAmount('0'),{value:'0',problem:null});
+ assert.deepEqual(parseAmount('1250,50'),{value:'1250.50',problem:null});
+ assert.deepEqual(parseAmount('007'),{value:'7',problem:null});
+ for(const bad of ['1,234','-5','1.000,50','12 000','abc','1e5'])assert.ok(parseAmount(bad).problem,bad);
+ const f=pform({fin:{...emptyProjectForm().fin,monthly_revenue:'0',fixed_costs:'',variable_costs:'99'},unknown:['variable_costs']});
+ const {priv}=savePayload(f);
+ assert.equal(priv.monthly_revenue,'0','zero rămâne zero');
+ assert.equal(priv.fixed_costs,null,'necompletat = null');
+ assert.deepEqual(priv.unknown_financials,['variable_costs'],'neestimat marcat separat');
+ assert.equal(priv.variable_costs,'99','valoarea anterioară se păstrează sub „Nu am estimat încă”');
+ assert.deepEqual(formatProblems(pform({fin:{...emptyProjectForm().fin,unit_cost:'1,234'}})).map(p=>p.step),[3]);
+ assert.deepEqual(formatProblems(pform({fin:{...emptyProjectForm().fin,unit_cost:'1,234'},unknown:['unit_cost']})),[],'câmp marcat neestimat nu este validat');
+ assert.equal(emptyProjectForm().unknown.length,0,'„Nu am estimat încă” nu este bifat implicit');
+});
+
+test('projects: draft may be incomplete; publishing needs the required fields; Remote needs no city',()=>{
+ assert.equal(formatProblems(pform({title:'Doar titlu'})).length,0,'ciorna incompletă poate fi salvată');
+ const missing=publishMissing(pform()).map(m=>m.text);
+ for(const t of ['titlul','descrierea scurtă','industria','stadiul','locația (un oraș sau „Remote / Online”)','ce caută proiectul (colegi, parteneri și/sau investiție)'])assert.ok(missing.includes(t),t);
+ const ok={title:'T',summary:'S',industry:'Retail',stage:'idee',city:'',is_remote:true,looking_for:['colegi']};
+ assert.deepEqual(publishMissing(pform(ok)),[]);
+ assert.equal(publishMissing(pform({...ok,is_remote:false})).length,1,'fără Remote, orașul este obligatoriu');
+ assert.deepEqual(publishMissing(pform({...ok,is_remote:false,city:'Cluj'})),[]);
+ assert.deepEqual(publishMissing(pform({...ok,looking_for:['investitie']})),[],'investiția fără sumă poate fi publicată');
+ assert.ok(formatProblems(pform({links:'javascript:alert(1)'})).length);
+ assert.ok(formatProblems(pform({links:Array.from({length:6},(_,i)=>'https://x.ro/'+i).join('\n')})).length);
+});
+
+test('projects: save payload separates public data from private finances and links',()=>{
+ const f=pform({title:' T ',looking_for:['investitie','colegi'],fin:{...emptyProjectForm().fin,investment_amount:'25000,5',monthly_revenue:'10'},links:'https://plan.ro/a\n\n https://plan.ro/b '});
+ const {pub,priv}=savePayload(f);
+ for(const [k] of FIN_FIELDS)assert.ok(!(k in pub),'public fără '+k);
+ assert.ok(!('plan_links' in pub)&&!('unknown_financials' in pub));
+ assert.deepEqual(pub.looking_for,['colegi','investitie']);assert.equal(pub.title,'T');
+ assert.deepEqual(priv.plan_links,['https://plan.ro/a','https://plan.ro/b']);
+ assert.equal(priv.investment_amount,'25000.5');
+ const noInvest=savePayload({...f,looking_for:['colegi']}).priv;
+ assert.equal(noInvest.investment_amount,'25000.5','debifarea investiției nu șterge suma');
+ for(const [k] of TEXT_FIELDS)assert.ok(k in pub);
+});
+
+test('projects: public investment text and private financial display',()=>{
+ assert.equal(investmentLabel({looking_for:['colegi'],investment_public:null}),null,'fără investiție: nu se afișează');
+ assert.equal(investmentLabel({looking_for:['parteneri'],investment_public:5000}),null);
+ assert.equal(investmentLabel({looking_for:['investitie'],investment_public:null}),'Investiție de stabilit');
+ assert.match(investmentLabel({looking_for:['investitie'],investment_public:25000.5})!,/^Investiție căutată: 25\.000,5 EUR$/);
+ const priv={unknown_financials:['fixed_costs'],plan_links:[],monthly_revenue:'0',fixed_costs:'10',variable_costs:null,initial_investment:null,investment_amount:null,monthly_growth_pct:'2.5',unit_price:null,unit_cost:null};
+ assert.equal(finDisplay(priv,'monthly_revenue'),'0 EUR');
+ assert.equal(finDisplay(priv,'fixed_costs'),'Nu am estimat încă');
+ assert.equal(finDisplay(priv,'variable_costs'),'Necompletat');
+ assert.equal(finDisplay(priv,'monthly_growth_pct'),'2,5%');
+ assert.equal(locationLabel({city:'',is_remote:true}),'Remote / Online');
+ assert.equal(locationLabel({city:'Cluj',is_remote:false}),'Cluj');
+ assert.match(projectErrorMessage('PT409'),/alt dispozitiv/);
+ assert.match(projectErrorMessage('PT422'),new RegExp(String(MAX_PROJECTS)));
+ assert.match(projectErrorMessage('PGRST202'),/20261122000000_projects/);
+});
+
+test('projects: form round-trip from stored values',()=>{
+ const p={id:'p1',owner_id:'A',status:'draft' as const,title:'T',summary:'S',industry:'Necunoscută',stage:'MVP',city:'Iași',is_remote:false,looking_for:['colegi','admin'],investment_public:null,created_at:'',updated_at:'',published_at:null,...Object.fromEntries(TEXT_FIELDS.map(([k])=>[k,k]))};
+ const f=formFromProject(p as never,{unknown_financials:['unit_cost','x'],plan_links:['https://a.ro'],monthly_revenue:'1250.50',fixed_costs:'0',variable_costs:null,initial_investment:'10.00',investment_amount:null,monthly_growth_pct:null,unit_price:null,unit_cost:null} as never);
+ assert.equal(f.industry,'','industrie necunoscută ignorată');assert.equal(f.stage,'','stadiu vechi ignorat');
+ assert.deepEqual(f.looking_for,['colegi']);assert.deepEqual(f.unknown,['unit_cost']);
+ assert.equal(f.fin.monthly_revenue,'1250,5');assert.equal(f.fin.fixed_costs,'0');assert.equal(f.fin.variable_costs,'');assert.equal(f.fin.initial_investment,'10');
+ assert.equal(f.links,'https://a.ro');
+});
+
+function projectsClient(project:object|null){
+ const calls:{name:string;args:unknown}[]=[];
+ const query=(table:string)=>{const q={select(cols:string){calls.push({name:'select',args:{table,cols}});return q},eq(c:string,v:string){calls.push({name:'eq',args:{table,c,v}});return q},order(){return q},limit(){return q},delete(){calls.push({name:'delete',args:{table}});return q},
+  maybeSingle(){return Promise.resolve({data:table==='projects'?project:table==='profiles'?{id:'A',display_name:'Ana',avatar_path:null}:{unknown_financials:[],plan_links:['https://p.ro']},error:null})},
+  then(res:(v:unknown)=>void){res({data:table==='projects'?[{id:'x'}]:[],error:null})}};return q};
+ return {calls,client:{from:query,rpc:(name:string,args:unknown)=>{calls.push({name:'rpc:'+name,args});return Promise.resolve({data:[{id:'p1',status:'draft',updated_at:'t2'}],error:null})},storage:{from:()=>({createSignedUrl:()=>Promise.resolve({data:{signedUrl:'u'}})})}}};
+}
+test('projects api: private data is requested only for own projects; save is one atomic call',async()=>{
+ const pub={id:'p1',owner_id:'A',status:'published',title:'T',summary:'S',industry:'Retail',stage:'idee',city:'',is_remote:true,looking_for:['colegi'],investment_public:null,created_at:'',updated_at:'t1',published_at:'',...Object.fromEntries(TEXT_FIELDS.map(([k])=>[k,'']))};
+ {const {calls,client}=projectsClient(pub);
+  // @ts-expect-error client simulat parțial
+  const b=await createProjectsApi(client).get('p1','B');
+  assert.ok(!calls.some(c=>c.name==='select'&&(c.args as {table:string}).table==='project_private'),'fără cerere de date private pentru alt utilizator');
+  assert.equal(b?.priv,null);assert.equal(b?.owner?.display_name,'Ana');
+  const cols=(calls.find(c=>c.name==='select'&&(c.args as {table:string}).table==='projects')!.args as {cols:string}).cols;
+  for(const [k] of FIN_FIELDS)assert.ok(!cols.split(',').includes(k),'coloana publică nu include '+k);}
+ {const {calls,client}=projectsClient(pub);
+  // @ts-expect-error client simulat parțial
+  const b=await createProjectsApi(client).get('p1','A');
+  assert.ok(calls.some(c=>c.name==='select'&&(c.args as {table:string}).table==='project_private'));assert.deepEqual(b?.priv?.plan_links,['https://p.ro']);}
+ {const {calls,client}=projectsClient(pub);
+  // @ts-expect-error client simulat parțial
+  const r=await createProjectsApi(client).save('p1','t1','published',pform({title:'T'}));
+  const rpc=calls.filter(c=>c.name.startsWith('rpc:'));assert.equal(rpc.length,1,'o singură cerere (tranzacție)');
+  assert.equal(rpc[0].name,'rpc:save_project');assert.equal((rpc[0].args as {p_expected_updated_at:string}).p_expected_updated_at,'t1','versiunea așteptată este trimisă');
+  assert.deepEqual(r,{id:'p1',status:'draft',updated_at:'t2'});}
+ {const {calls,client}=projectsClient(pub);
+  // @ts-expect-error client simulat parțial
+  await createProjectsApi(client).remove('p1');
+  assert.ok(calls.some(c=>c.name==='eq'&&(c.args as {c:string;v:string}).c==='status'&&(c.args as {v:string}).v==='draft'),'ștergerea vizează doar ciorne');}
+});

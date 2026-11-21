@@ -314,6 +314,114 @@ select t.expect_affected('discover(A): datele lui F rămân protejate la modific
 reset role;
 
 -- ---------------------------------------------------------------------------
+-- 9. Proiecte reale (ciorne private, proiecte publicate, date private)
+-- ---------------------------------------------------------------------------
+-- A: Creator (proprietar). F: alt Creator. B: doar Investitor. anon: vizitator.
+select t.expect_true('proiecte: RLS activ pe projects și project_private', $$select bool_and(relrowsecurity) from pg_class where oid in ('public.projects'::regclass, 'public.project_private'::regclass)$$);
+select t.expect_true('proiecte: anon nu are niciun drept pe tabele', $$select not has_table_privilege('anon', 'public.projects', 'select') and not has_table_privilege('anon', 'public.project_private', 'select')$$);
+select t.expect_true('proiecte: utilizatorii nu pot scrie owner_id, investment_public, created_at, updated_at', $$select not has_column_privilege('authenticated', 'public.projects', 'owner_id', 'update') and not has_column_privilege('authenticated', 'public.projects', 'investment_public', 'update') and not has_column_privilege('authenticated', 'public.projects', 'investment_public', 'insert') and not has_column_privilege('authenticated', 'public.projects', 'created_at', 'update') and not has_column_privilege('authenticated', 'public.projects', 'owner_id', 'insert')$$);
+select t.expect_true('proiecte: save_project și set_project_status rulează cu drepturile apelantului', $$select bool_and(not prosecdef) from pg_proc where proname in ('save_project', 'set_project_status')$$);
+select t.expect_true('proiecte: fără coloane de contoare/statistici', $$select not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name in ('projects', 'project_private') and column_name ~ '(views|saves|matches|score|counter)')$$);
+
+set role anon;
+select set_config('request.jwt.claims', '{"role":"anon"}', false);
+select t.expect_error('anon: nu poate citi proiecte', 'select * from public.projects', array['42501']);
+select t.expect_error('anon: nu poate salva proiecte', $$select * from public.save_project(null, null, 'draft', '{"title":"x"}', '{}')$$, array['42501']);
+reset role;
+
+-- B (doar Investitor) nu poate crea proiecte
+set role authenticated;
+select set_config('request.jwt.claims', '{"sub":"22222222-2222-2222-2222-222222222222","role":"authenticated"}', false);
+select t.expect_error('B (fără rol Creator): NU poate crea un proiect', $$select * from public.save_project(null, null, 'draft', '{"title":"Proiect B"}', '{}')$$, array['42501']);
+reset role;
+
+-- A creează o ciornă incompletă
+set role authenticated;
+select set_config('request.jwt.claims', '{"sub":"11111111-1111-1111-1111-111111111111","role":"authenticated"}', false);
+select id as pa, updated_at as pa_ts from public.save_project(null, null, 'draft', '{"title":"Atelier verde"}', '{"monthly_revenue":"0","unknown_financials":["variable_costs"]}') \gset
+select t.expect_rows('A: ciorna incompletă este salvată', $$select 1 from public.projects where id = '$$ || :'pa' || $$' and status = 'draft' and title = 'Atelier verde' and summary = ''$$, 1);
+select t.expect_rows('A: datele private ale ciornei: 0, neestimat și necompletat distincte', $$select 1 from public.project_private where project_id = '$$ || :'pa' || $$' and monthly_revenue = 0 and fixed_costs is null and not ('fixed_costs' = any(unknown_financials)) and 'variable_costs' = any(unknown_financials) and variable_costs is null$$, 1);
+select t.expect_error('A: publicarea ciornei incomplete este respinsă', $$select * from public.set_project_status('$$ || :'pa' || $$', '$$ || :'pa_ts' || $$', 'published')$$, array['23514']);
+select t.expect_rows('A: după respingere proiectul rămâne ciornă', $$select 1 from public.projects where id = '$$ || :'pa' || $$' and status = 'draft'$$, 1);
+reset role;
+
+-- F (alt Creator) nu vede ciorna și nici datele private
+set role authenticated;
+select set_config('request.jwt.claims', '{"sub":"66666666-6666-6666-6666-666666666666","role":"authenticated"}', false);
+select t.expect_rows('F: NU vede ciorna lui A', $$select 1 from public.projects where id = '$$ || :'pa' || $$'$$, 0);
+select t.expect_rows('F: NU vede datele private ale ciornei', $$select 1 from public.project_private where project_id = '$$ || :'pa' || $$'$$, 0);
+select t.expect_error('F: NU poate salva peste proiectul lui A', $$select * from public.save_project('$$ || :'pa' || $$', '$$ || :'pa_ts' || $$', 'draft', '{"title":"furat"}', '{}')$$, array['42501']);
+reset role;
+
+-- A publică varianta Remote / Online, fără investiție (doar colegi)
+set role authenticated;
+select set_config('request.jwt.claims', '{"sub":"11111111-1111-1111-1111-111111111111","role":"authenticated"}', false);
+select t.expect_error('A: salvarea cu versiune veche este refuzată (editare simultană)', $$select * from public.save_project('$$ || :'pa' || $$', '2000-01-01T00:00:00Z', 'draft', '{"title":"Altă versiune"}', '{}')$$, array['PT409']);
+select id as pa, updated_at as pa_ts from public.save_project(:'pa', :'pa_ts', 'published', '{"title":"Atelier verde","summary":"Mobilier din materiale reciclate.","industry":"Producție","stage":"in_dezvoltare","city":"","is_remote":true,"looking_for":["colegi","colegi"],"problem":"Deșeuri"}', '{"monthly_revenue":"0","investment_amount":"25000.50","plan_links":["https://exemplu.ro/plan"]}') \gset
+select t.expect_rows('A: publicat cu „Remote / Online”, fără oraș', $$select 1 from public.projects where id = '$$ || :'pa' || $$' and status = 'published' and is_remote and city = '' and published_at is not null$$, 1);
+select t.expect_rows('A: „ce caută” fără dubluri', $$select 1 from public.projects where id = '$$ || :'pa' || $$' and looking_for = array['colegi']$$, 1);
+select t.expect_rows('A: fără căutare de investiție, suma NU este publică (dar rămâne salvată privat)', $$select 1 from public.projects p join public.project_private pp on pp.project_id = p.id where p.id = '$$ || :'pa' || $$' and p.investment_public is null and pp.investment_amount = 25000.50$$, 1);
+reset role;
+
+set role authenticated;
+select set_config('request.jwt.claims', '{"sub":"66666666-6666-6666-6666-666666666666","role":"authenticated"}', false);
+select t.expect_rows('F: vede proiectul publicat', $$select 1 from public.projects where id = '$$ || :'pa' || $$' and status = 'published'$$, 1);
+select t.expect_rows('F: NU vede finanțele și linkurile private ale proiectului publicat', $$select 1 from public.project_private where project_id = '$$ || :'pa' || $$'$$, 0);
+select t.expect_affected('F: NU poate modifica proiectul publicat (0 rânduri)', $$update public.projects set title = 'Furat' where id = '$$ || :'pa' || $$'$$, 0);
+select t.expect_error('F: NU poate schimba starea proiectului', $$select * from public.set_project_status('$$ || :'pa' || $$', '$$ || :'pa_ts' || $$', 'draft')$$, array['42501']);
+select t.expect_affected('F: NU poate șterge proiectul (0 rânduri)', $$delete from public.projects where id = '$$ || :'pa' || $$'$$, 0);
+select t.expect_error('F: NU poate scrie date private pentru proiectul lui A', $$insert into public.project_private (project_id) values ('$$ || :'pa' || $$')$$, array['42501', '23505']);
+select t.expect_affected('F: NU poate modifica datele private ale lui A (0 rânduri)', $$update public.project_private set plan_links = '{}' where project_id = '$$ || :'pa' || $$'$$, 0);
+reset role;
+
+set role authenticated;
+select set_config('request.jwt.claims', '{"sub":"22222222-2222-2222-2222-222222222222","role":"authenticated"}', false);
+select t.expect_rows('B (Investitor): vede proiectul publicat', $$select 1 from public.projects where id = '$$ || :'pa' || $$'$$, 1);
+reset role;
+
+-- A: investiție, sumă necunoscută, retragere, ștergere, valori nepermise
+set role authenticated;
+select set_config('request.jwt.claims', '{"sub":"11111111-1111-1111-1111-111111111111","role":"authenticated"}', false);
+select t.expect_error('A: NU poate schimba proprietarul', $$update public.projects set owner_id = '66666666-6666-6666-6666-666666666666' where id = '$$ || :'pa' || $$'$$, array['42501']);
+select t.expect_error('A: NU poate scrie direct suma publică', $$update public.projects set investment_public = 1 where id = '$$ || :'pa' || $$'$$, array['42501']);
+select t.expect_error('A: NU poate crea un proiect pentru alt proprietar', $$insert into public.projects (owner_id, title) values ('66666666-6666-6666-6666-666666666666', 'x')$$, array['42501']);
+select t.expect_affected('A: NU poate șterge un proiect publicat (0 rânduri)', $$delete from public.projects where id = '$$ || :'pa' || $$'$$, 0);
+select id as pa, updated_at as pa_ts from public.save_project(:'pa', :'pa_ts', 'published', '{"title":"Atelier verde","summary":"Mobilier din materiale reciclate.","industry":"Producție","stage":"in_dezvoltare","is_remote":true,"looking_for":["investitie","colegi"]}', '{"investment_amount":"25000.50"}') \gset
+select t.expect_rows('A: caută investiție cu sumă estimată → suma este publică', $$select 1 from public.projects where id = '$$ || :'pa' || $$' and investment_public = 25000.50 and looking_for = array['colegi', 'investitie']$$, 1);
+select id as pa, updated_at as pa_ts from public.save_project(:'pa', :'pa_ts', 'published', '{"title":"Atelier verde","summary":"Mobilier din materiale reciclate.","industry":"Producție","stage":"in_dezvoltare","is_remote":true,"looking_for":["investitie"]}', '{"investment_amount":"25000.50","unknown_financials":["investment_amount"]}') \gset
+select t.expect_rows('A: investiție „de stabilit” (neestimată) → publicarea este permisă, suma nu este publică', $$select 1 from public.projects p join public.project_private pp on pp.project_id = p.id where p.id = '$$ || :'pa' || $$' and p.status = 'published' and p.investment_public is null and pp.investment_amount = 25000.50$$, 1);
+select id as pa, updated_at as pa_ts from public.save_project(:'pa', :'pa_ts', 'published', '{"title":"Atelier verde","summary":"Mobilier din materiale reciclate.","industry":"Producție","stage":"in_dezvoltare","is_remote":true,"looking_for":["investitie"]}', '{}') \gset
+select t.expect_rows('A: investiție fără sumă (necompletată) → publicarea este permisă', $$select 1 from public.projects where id = '$$ || :'pa' || $$' and status = 'published' and investment_public is null$$, 1);
+select t.expect_error('A: mai mult de 2 zecimale respins', $$select * from public.save_project('$$ || :'pa' || $$', '$$ || :'pa_ts' || $$', 'published', '{"title":"Atelier verde","summary":"S","industry":"Producție","stage":"idee","is_remote":true,"looking_for":["colegi"]}', '{"unit_price":"1.234"}')$$, array['23514']);
+select t.expect_rows('A: salvarea respinsă nu a modificat nimic (salvare atomică)', $$select 1 from public.projects where id = '$$ || :'pa' || $$' and stage = 'in_dezvoltare' and looking_for = array['investitie']$$, 1);
+select t.expect_error('A: sumă negativă respinsă', $$select * from public.save_project('$$ || :'pa' || $$', '$$ || :'pa_ts' || $$', 'published', '{"title":"Atelier verde","summary":"S","industry":"Producție","stage":"idee","is_remote":true,"looking_for":["colegi"]}', '{"fixed_costs":"-1"}')$$, array['23514']);
+select t.expect_error('A: link nepermis respins', $$select * from public.save_project('$$ || :'pa' || $$', '$$ || :'pa_ts' || $$', 'published', '{"title":"Atelier verde","summary":"S","industry":"Producție","stage":"idee","is_remote":true,"looking_for":["colegi"]}', '{"plan_links":["javascript:alert(1)"]}')$$, array['23514']);
+select t.expect_error('A: stadiu nepermis respins', $$select * from public.save_project('$$ || :'pa' || $$', '$$ || :'pa_ts' || $$', 'draft', '{"stage":"MVP"}', '{}')$$, array['23514']);
+select t.expect_error('A: „ce caută” nepermis respins', $$select * from public.save_project('$$ || :'pa' || $$', '$$ || :'pa_ts' || $$', 'draft', '{"looking_for":["admin"]}', '{}')$$, array['23514']);
+select t.expect_error('A: publicare fără „ce caută” respinsă', $$select * from public.save_project('$$ || :'pa' || $$', '$$ || :'pa_ts' || $$', 'published', '{"title":"T","summary":"S","industry":"Producție","stage":"idee","is_remote":true,"looking_for":[]}', '{}')$$, array['23514']);
+select t.expect_error('A: publicare fără oraș și fără Remote respinsă', $$select * from public.save_project('$$ || :'pa' || $$', '$$ || :'pa_ts' || $$', 'published', '{"title":"T","summary":"S","industry":"Producție","stage":"idee","city":"  ","is_remote":false,"looking_for":["colegi"]}', '{}')$$, array['23514']);
+select t.expect_rows('A: publicare cu oraș (fără Remote) permisă', $$select 1 from public.save_project('$$ || :'pa' || $$', '$$ || :'pa_ts' || $$', 'published', '{"title":"Atelier verde","summary":"Mobilier.","industry":"Producție","stage":"lansat","city":"Cluj","is_remote":false,"looking_for":["parteneri"]}', '{"investment_amount":"25000.50"}')$$, 1);
+select updated_at as pa_ts from public.projects where id = :'pa' \gset
+select t.expect_rows('A: retragerea din publicare → ciornă, fără pierderea datelor', $$select 1 from public.set_project_status('$$ || :'pa' || $$', '$$ || :'pa_ts' || $$', 'draft') r join public.project_private pp on pp.project_id = r.id where r.status = 'draft' and pp.investment_amount = 25000.50$$, 1);
+reset role;
+
+set role authenticated;
+select set_config('request.jwt.claims', '{"sub":"66666666-6666-6666-6666-666666666666","role":"authenticated"}', false);
+select t.expect_rows('F: proiectul retras nu mai este vizibil', $$select 1 from public.projects where id = '$$ || :'pa' || $$'$$, 0);
+reset role;
+
+set role authenticated;
+select set_config('request.jwt.claims', '{"sub":"11111111-1111-1111-1111-111111111111","role":"authenticated"}', false);
+select t.expect_affected('A: ștergerea definitivă a ciornei proprii', $$delete from public.projects where id = '$$ || :'pa' || $$'$$, 1);
+select t.expect_rows('A: datele private ale proiectului șters au dispărut', $$select 1 from public.project_private where project_id = '$$ || :'pa' || $$'$$, 0);
+-- Limita de 20 de proiecte pe cont
+select t.expect_error('A: limita de 20 de proiecte (al 21-lea refuzat)', $q$do $x$ begin for i in 1..25 loop perform public.save_project(null, null, 'draft', '{}', '{}'); end loop; end $x$$q$, array['PT422']);
+select t.expect_rows('A: după încercare, fără proiecte create (tranzacția anulată)', 'select 1 from public.projects where owner_id = auth.uid()', 0);
+select t.expect_true('A: exact 20 de proiecte permise', $$select count(*) = 20 from (select public.save_project(null, null, 'draft', '{}', '{}') from generate_series(1, 20)) q$$);
+select t.expect_error('A: al 21-lea proiect este refuzat', $$select * from public.save_project(null, null, 'draft', '{}', '{}')$$, array['PT422']);
+reset role;
+
+-- ---------------------------------------------------------------------------
 -- Rezultat
 -- ---------------------------------------------------------------------------
 \o

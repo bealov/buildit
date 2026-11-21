@@ -187,6 +187,51 @@ async function run(){
   });
  }
 
+ // 2c. Proiecte reale — o singură ciornă TEMPORARĂ pentru contul A, identificată prin ID-ul creat
+ //     în această rulare și ștearsă la final. Proiectele existente nu sunt modificate. Fără publicare.
+ await check('vizitator: nu poate citi proiecte',async()=>mustBeDenied(await anon.from('projects').select('id')));
+ await check('vizitator: nu poate salva proiecte',async()=>{if(!(await anon.rpc('save_project',{p_id:null,p_expected_updated_at:null,p_status:'draft',p_public:{title:'x'},p_private:{}})).error)fail('operațiunea a fost PERMISĂ')});
+ await check('B: nu poate crea proiecte dacă nu are rolul Creator',async()=>{
+  if(initial.B.roles.includes('creator'))return 'omis'; // B are rolul Creator: nu creăm proiecte pentru B
+  const r=await B.c.rpc('save_project',{p_id:null,p_expected_updated_at:null,p_status:'draft',p_public:{title:'Test B'},p_private:{}});
+  if(!r.error){const id=r.data?.[0]?.id;if(id)await B.c.from('projects').delete().eq('id',id);fail('operațiunea a fost PERMISĂ (ciorna a fost ștearsă)')}
+ });
+ const before=await A.c.from('projects').select('id',{count:'exact',head:true}).eq('owner_id',A.id);
+ projectCountBefore=before.count;
+ const canCreate=initial.A.roles.includes('creator')&&!before.error&&(before.count??0)<20;
+ let pid=null,pts=null;
+ const P=(name,fn)=>check(`proiecte: ${name}`,async()=>{if(!canCreate||(!pid&&!name.startsWith('A creează')))return 'omis';return fn()});
+ await P('A creează o ciornă temporară incompletă (cu 0, „Nu am estimat încă” și necompletat)',async()=>{
+  const r=await A.c.rpc('save_project',{p_id:null,p_expected_updated_at:null,p_status:'draft',p_public:{title:'Test automat — se șterge'},p_private:{monthly_revenue:'0',unknown_financials:['fixed_costs'],plan_links:['https://exemplu.invalid/plan']}});
+  if(r.error)fail('cod '+codeOf(r.error));pid=r.data?.[0]?.id;pts=r.data?.[0]?.updated_at;tempProject.id=pid;if(!pid)fail('fără ID');
+ });
+ await P('A își citește ciorna și datele private; valorile rămân distincte',async()=>{
+  const v=await A.c.from('project_private').select('monthly_revenue,fixed_costs,variable_costs,unknown_financials,plan_links').eq('project_id',pid).single();
+  if(v.error)fail('cod '+codeOf(v.error));
+  if(Number(v.data.monthly_revenue)!==0||v.data.fixed_costs!==null||!v.data.unknown_financials.includes('fixed_costs')||v.data.variable_costs!==null||v.data.plan_links.length!==1)fail('valorile diferă');
+ });
+ await P('B NU vede ciorna lui A',async()=>{const r=await B.c.from('projects').select('id').eq('id',pid);if(r.error)return;if(r.data.length)fail('ciorna este vizibilă')});
+ await P('B NU vede datele private (finanțe, linkuri)',async()=>{const r=await B.c.from('project_private').select('project_id').eq('project_id',pid);if(r.error)return;if(r.data.length)fail('datele private sunt vizibile')});
+ await P('B NU poate salva peste proiectul lui A',async()=>{if(!(await B.c.rpc('save_project',{p_id:pid,p_expected_updated_at:pts,p_status:'draft',p_public:{title:'furat'},p_private:{}})).error)fail('operațiunea a fost PERMISĂ')});
+ await P('B NU poate schimba starea proiectului lui A',async()=>{if(!(await B.c.rpc('set_project_status',{p_id:pid,p_expected_updated_at:pts,p_status:'published'})).error)fail('operațiunea a fost PERMISĂ')});
+ await P('B NU poate modifica sau șterge proiectul lui A',async()=>{mustBeDenied(await B.c.from('projects').update({title:'furat'}).eq('id',pid).select('id'));mustBeDenied(await B.c.from('projects').delete().eq('id',pid).select('id'))});
+ await P('B NU poate modifica datele private ale lui A',async()=>mustBeDenied(await B.c.from('project_private').update({plan_links:[]}).eq('project_id',pid).select('project_id')));
+ await P('A NU poate schimba proprietarul',async()=>{if(!(await A.c.from('projects').update({owner_id:B.id}).eq('id',pid)).error)fail('operațiunea a fost PERMISĂ')});
+ await P('A NU poate scrie direct suma publică a investiției',async()=>{if(!(await A.c.from('projects').update({investment_public:1}).eq('id',pid)).error)fail('operațiunea a fost PERMISĂ')});
+ await P('publicarea ciornei incomplete este respinsă (rămâne ciornă)',async()=>{
+  const r=await A.c.rpc('set_project_status',{p_id:pid,p_expected_updated_at:pts,p_status:'published'});if(!r.error)fail('proiectul incomplet a fost publicat');
+  const s=await A.c.from('projects').select('status').eq('id',pid).single();if(s.data?.status!=='draft')fail('starea s-a schimbat');
+ });
+ await P('salvarea cu o versiune veche este refuzată (editare simultană)',async()=>{const r=await A.c.rpc('save_project',{p_id:pid,p_expected_updated_at:'2000-01-01T00:00:00Z',p_status:'draft',p_public:{title:'veche'},p_private:{}});if(codeOf(r.error)!=='PT409')fail('cod '+codeOf(r.error))});
+ await P('valori nepermise respinse (3 zecimale, link, stadiu, „ce caută”)',async()=>{
+  for(const [pub,priv] of [[{title:'t'},{unit_price:'1.234'}],[{title:'t'},{plan_links:['javascript:alert(1)']}],[{title:'t',stage:'MVP'},{}],[{title:'t',looking_for:['admin']},{}]]){
+   const r=await A.c.rpc('save_project',{p_id:pid,p_expected_updated_at:pts,p_status:'draft',p_public:pub,p_private:priv});if(!r.error)fail('o valoare nepermisă a fost acceptată')}
+  const s=await A.c.from('projects').select('title,updated_at').eq('id',pid).single();if(s.data?.title!=='Test automat — se șterge'||s.data?.updated_at!==pts)fail('salvarea respinsă a modificat proiectul');
+ });
+ await P('A salvează din nou ciorna cu versiunea curentă',async()=>{const r=await A.c.rpc('save_project',{p_id:pid,p_expected_updated_at:pts,p_status:'draft',p_public:{title:'Test automat — se șterge',city:'Test'},p_private:{monthly_revenue:'0'}});if(r.error)fail('cod '+codeOf(r.error));pts=r.data[0].updated_at});
+ await P('A șterge ciorna temporară (doar ID-ul creat acum)',async()=>{const r=await A.c.from('projects').delete().eq('id',pid).eq('status','draft').select('id');if(r.error||r.data.length!==1)fail('ștergerea nu a reușit');tempProject.id=null;
+  const left=await A.c.from('project_private').select('project_id').eq('project_id',pid);if(left.data?.length)fail('datele private au rămas')});
+
  // 3. Roluri nepermise și operațiile proprietarului
  for(const me of [A,B]){
   const init=initial[me.label];
@@ -230,8 +275,12 @@ async function run(){
 }
 
 let restored={A:[],B:[]};
+var tempProject={id:null},projectCountBefore=null;
 try{await run()}
 finally{
+ // Curățenie: doar ciorna temporară creată în această rulare (după ID).
+ if(tempProject.id){await A.c.from('projects').delete().eq('id',tempProject.id).eq('status','draft');tempProject.id=null}
+ if(projectCountBefore!=null)await check('A: numărul de proiecte existente a rămas neschimbat',async()=>{const r=await A.c.from('projects').select('id',{count:'exact',head:true}).eq('owner_id',A.id);if(r.count!==projectCountBefore)fail('numărul de proiecte diferă')});
  for(const u of [A,B])restored[u.label]=await restore(u).catch(()=>['restaurarea a eșuat']);
  for(const u of [A,B])await check(`${u.label}: profilul, datele private, rolurile și fotografia au rămas neschimbate`,async()=>{if(!(await unchanged(u)))fail('starea finală diferă de cea inițială')});
  // scope local: închide doar sesiunile acestui script, nu și pe cele din browser sau telefon
