@@ -196,3 +196,28 @@ Doar organizarea interfeței; regulile de acces, migrarea și datele nu s-au sch
 Executate local: `npm run lint` 0 erori; `npm run build` reușit; `npm test` 62/62 unitare, 63 + 543 verificări de randare (17 noi: etichetele cu numere, fila selectată, poziția butonului deasupra filelor, mesajele pentru filele goale, contorul total la 20, fila implicită și preferința după acțiuni, inclusiv neaplicarea preferinței altui cont); `npm run test:db` 179/179 (neschimbat); `npm run test:e2e` 32/32 pași la 390 px și la 1366 px, cu server **simulat** — pas nou: fila implicită „Publicate”, trecerea în „Publicate” după publicare, mesaj pentru „Ciorne (0)”, trecerea în „Ciorne” după retragere, păstrarea filei alese manual și selectarea „Ciorne” după salvarea unei ciorne. Capturile de ecran pe telefon și laptop au fost verificate vizual.
 
 Neverificat încă pe buildit-dev sau manual pe Vercel Preview.
+
+### Pe buildit-dev · 22 noiembrie 2026
+
+**Migrare:** `20261122000000_projects.sql` aplicată pe buildit-dev; interogarea de verificare a returnat `true, 7, true, false, false, false, false` (RLS activ, 7 reguli de acces, funcții cu drepturile utilizatorului, fără acces pentru vizitatori, proprietar și sumă publică nemodificabile) — raportat de utilizator.
+
+#### Automat (GitHub Actions)
+
+„Permisiuni buildit-dev”, [rularea #5 (44921900303)](https://github.com/bealov/buildit/actions/runs/44921900303), **commit testat `917663a`** — **100 trecute, 0 eșuate, 1 omisă.** Rularea a fost făcută înainte de commit-ul `49003e1` (filele „Publicate” / „Ciorne”), care modifică doar interfața; scriptul de test este identic.
+
+Verificări pentru proiecte trecute (18), cu o ciornă temporară a contului A creată, verificată și ștearsă după ID: vizitatorul nu poate citi sau salva proiecte; ciorna incompletă este salvată, iar 0, „Nu am estimat încă” și necompletat rămân distincte; B nu vede ciorna și nici datele private (finanțe, linkuri), nu poate salva peste proiect, schimba starea, modifica, șterge sau modifica datele private; A nu poate schimba proprietarul și nici scrie direct suma publică; publicarea ciornei incomplete este respinsă; salvarea cu o versiune veche este refuzată (editare simultană); valorile nepermise sunt respinse; resalvarea cu versiunea curentă reușește; ciorna temporară a fost ștearsă și numărul proiectelor existente ale lui A a rămas neschimbat. Verificările anterioare (profiluri, roluri, fotografii, „Descoperă oameni”) au trecut și ele, iar profilurile, rolurile și fotografiile au rămas neschimbate.
+
+**Omisă:** „B: nu poate crea proiecte dacă nu are rolul Creator” — contul B are rolul Creator. Regula este verificată doar local (`test:db`); **verificarea pe buildit-dev cu un cont exclusiv Investitor rămâne de făcut.**
+
+#### Manual pe Vercel Preview (raportat de utilizator)
+
+- Ciorna rămâne salvată după F5.
+- Publicarea funcționează.
+- Filele „Publicate” / „Ciorne” și mutarea proiectului după publicare și retragere funcționează, inclusiv pe telefon.
+- Contul „Maria” deschide prin link proiectul publicat de „Beatrice L”, fără butoane de editare, retragere sau ștergere.
+- După retragere și reîncărcare, „Maria” nu mai vede conținutul proiectului.
+- Veniturile, costurile și linkurile planului completate de „Beatrice L” nu sunt vizibile pentru „Maria”.
+- Investiția căutată de 5.000 EUR este vizibilă pentru „Maria”.
+- Editarea simultană laptop/telefon afișează conflictul și păstrează modificările nesalvate în formular; „Încarcă versiunea salvată” aduce corect titlul salvat pe laptop.
+
+**Netestate manual** (acoperite doar de testele locale sau simulate): suprascrierea explicită prin „Salvează modificările mele”; editarea unui proiect publicat cu confirmarea „Actualizează proiectul publicat” (versiunea veche vizibilă până la confirmare) și „Renunță”; mesajul pentru publicarea incompletă în formular; varianta „Remote / Online”; „Investiție de stabilit” (fără sumă); proiectul fără căutare de investiție (suma nu apare public) și păstrarea sumei după debifarea investiției; afișarea pentru proprietar a valorilor 0 / „Nu am estimat încă” / „Necompletat”; ștergerea definitivă a unei ciorne; „Vezi profilul” proprietarului din pagina proiectului; limita de 20 de proiecte; contul exclusiv Investitor (creare refuzată; „Proiecte” neschimbat în Mod Investitor).
