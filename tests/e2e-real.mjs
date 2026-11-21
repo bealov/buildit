@@ -209,7 +209,7 @@ const browser=await chromium.launch();
 const context=await browser.newContext({viewport:{width:Number(process.env.E2E_WIDTH||390),height:844}});
 const page=await context.newPage();
 const errors=[];page.on('pageerror',e=>errors.push(String(e)));page.on('console',m=>{if(m.type()==='error'&&!/Failed to load resource/.test(m.text()))errors.push(m.text())});
-const shot=async n=>{if(process.env.E2E_SHOTS)await page.screenshot({path:join(process.env.E2E_SHOTS,n+'.png'),fullPage:true})};
+const shot=async n=>{if(process.env.E2E_SHOTS)await page.waitForTimeout(400),await page.screenshot({path:join(process.env.E2E_SHOTS,n+'.png'),fullPage:true})};
 let steps=0;const step=async(name,fn)=>{try{await fn()}catch(e){if(process.env.E2E_DEBUG){await page.screenshot({path:process.env.E2E_DEBUG,fullPage:true});console.log('DEBUG',await page.evaluate(()=>JSON.stringify({dialogs:[...document.querySelectorAll('dialog')].map(d=>({open:d.open,text:d.innerText.slice(0,80)})),labels:[...document.querySelectorAll('label')].filter(l=>l.innerText.includes('Descriere')).map(l=>l.outerHTML.slice(0,300))})))}throw e}steps++;console.log('ok -',name)};
 const text=()=>page.locator('body').innerText();
 const ls=()=>page.evaluate(()=>Object.fromEntries(Object.keys(localStorage).map(k=>[k,localStorage.getItem(k)])));
@@ -520,6 +520,38 @@ try{
   await page.getByRole('button',{name:'Șterge ciorna'}).click();await page.getByRole('button',{name:'Șterge definitiv'}).click();
   await page.getByText('Ciorna a fost ștearsă definitiv.').waitFor();await page.getByText('Nu ai încă proiecte').waitFor();
   assert.equal(projectId(),undefined);assert.equal(db.project_private[id],undefined);
+ });
+ await step('proiecte: file „Publicate” / „Ciorne” — fila implicită și trecerea proiectului între categorii',async()=>{
+  const full=(id,status,title)=>({id,owner_id:users.A.id,status,title,summary:'Rezumat.',industry:'Retail',stage:'idee',city:'Iași',is_remote:false,looking_for:['colegi'],investment_public:null,created_at:stamp(),updated_at:stamp(),published_at:status==='published'?stamp():null,...Object.fromEntries(PROJECT_TEXT.map(k=>[k,'']))});
+  for(const [id,st,t] of [['tab-p1','published','Proiect publicat unu'],['tab-p2','draft','Ciornă completă doi']]){db.projects[id]=full(id,st,t);db.project_private[id]={...Object.fromEntries(FIN.map(k=>[k,null])),unknown_financials:[],plan_links:[]}}
+  const tabs=()=>page.getByRole('tablist',{name:'Categorii de proiecte'});
+  const selected=async()=>(await tabs().getByRole('tab',{selected:true}).innerText()).trim();
+  const listed=async()=>page.locator('.project-row strong').allInnerTexts();
+  const toList=async()=>{await page.getByRole('button',{name:'Proiecte',exact:true}).click();await tabs().waitFor();await page.waitForFunction(()=>!document.body.innerText.includes('Se încarcă proiectele'))};
+  await page.reload();await tabs().waitFor();await page.waitForFunction(()=>!document.body.innerText.includes('Se încarcă proiectele'));
+  assert.equal(await selected(),'Publicate (1)','implicit: Publicate, pentru că există proiecte publicate');
+  assert.deepEqual(await listed(),['Proiect publicat unu']);
+  await page.getByText('2 din 20 proiecte (publicate și ciorne)').waitFor();
+  assert.ok((await page.locator('main').innerText()).indexOf('Creează un proiect')<(await page.locator('main').innerText()).indexOf('Publicate (1)'),'butonul de creare deasupra filelor');
+  await tabs().getByRole('tab',{name:'Ciorne (1)'}).click();assert.deepEqual(await listed(),['Ciornă completă doi']);
+  await shot('10-file-ciorne');
+  // publicare → fila Publicate
+  await page.getByRole('button',{name:/Ciornă completă doi/}).click();await page.getByRole('button',{name:'Publică',exact:true}).click();await page.getByText('Proiectul a fost publicat.').waitFor();
+  await toList();assert.equal(await selected(),'Publicate (2)');assert.ok((await listed()).includes('Ciornă completă doi'),'proiectul publicat este în fila Publicate');
+  await tabs().getByRole('tab',{name:'Ciorne (0)'}).click();await page.getByText('Nu ai ciorne. Proiectele noi și cele retrase').waitFor();
+  await shot('11-file-ciorne-goala');
+  // retragere → fila Ciorne
+  await tabs().getByRole('tab',{name:'Publicate (2)'}).click();
+  await page.getByRole('button',{name:/Proiect publicat unu/}).click();await page.getByRole('button',{name:'Retrage din publicare'}).click();await page.getByRole('dialog').getByRole('button',{name:'Retrage din publicare'}).click();
+  await page.getByText('Proiectul a fost retras din publicare').waitFor();
+  await toList();assert.equal(await selected(),'Ciorne (1)');assert.deepEqual(await listed(),['Proiect publicat unu']);
+  // alegerea manuală se păstrează la revenire; salvarea unei ciorne selectează Ciorne
+  await tabs().getByRole('tab',{name:'Publicate (1)'}).click();await page.getByRole('button',{name:/Ciornă completă doi/}).click();await page.getByRole('heading',{name:'Ciornă completă doi'}).waitFor();
+  await toList();assert.equal(await selected(),'Publicate (1)','fila aleasă manual rămâne');
+  await page.goto(ORIGIN+'/#project-edit/tab-p1');await page.getByText('PASUL 1 DIN 6').waitFor();
+  await input('Titlul proiectului').fill('Proiect retras, editat');await page.getByRole('button',{name:'Salvează ciorna'}).click();await page.getByText('Ciorna a fost salvată.').waitFor();
+  await toList();assert.equal(await selected(),'Ciorne (1)','după salvarea ciornei: Ciorne');assert.deepEqual(await listed(),['Proiect retras, editat']);
+  for(const id of ['tab-p1','tab-p2']){delete db.projects[id];delete db.project_private[id]}
  });
  await step('proiecte: limita de 20 — butonul de creare se dezactivează',async()=>{
   for(let i=0;i<20;i++){const pid='seed-'+i;db.projects[pid]={id:pid,owner_id:users.A.id,status:'draft',title:'Ciornă '+i,summary:'',industry:'',stage:'',city:'',is_remote:false,looking_for:[],investment_public:null,created_at:stamp(),updated_at:stamp(),published_at:null,...Object.fromEntries(PROJECT_TEXT.map(k=>[k,'']))};db.project_private[pid]={...Object.fromEntries(FIN.map(k=>[k,null])),unknown_financials:[],plan_links:[]}}

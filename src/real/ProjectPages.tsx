@@ -17,29 +17,48 @@ const dateRo=(s:string|null)=>s?new Date(s).toLocaleDateString('ro-RO'):'';
 // ---------------------------------------------------------------------------
 // Proiectele mele
 // ---------------------------------------------------------------------------
-export function MyProjects({api,userId,nav}:{api:ProjectsApi;userId:string;nav:(r:string)=>void}){
- const [state,setState]=useState<{status:'loading'|'ready'|'error';items:PublicProject[];error?:ErrorInfo}>({status:'loading',items:[]});
- const load=async()=>{setState(s=>({...s,status:'loading'}));try{setState({status:'ready',items:await api.mine(userId)})}catch(e){setState({status:'error',items:[],error:loadErrorInfo(e)})}};
- useEffect(()=>{void load()},[]);
- return <MyProjectsView state={state} onRetry={()=>void load()} nav={nav}/>;
+export type ProjectsTab='published'|'draft';
+// Fila preferată (în memorie, per cont): setată după salvarea unei ciorne, publicare, retragere sau ștergere,
+// ori la alegerea manuală a filei, ca proiectul să rămână ușor de găsit la revenirea în listă.
+let preferredTab:{userId:string;tab:ProjectsTab}|null=null;
+export function preferProjectsTab(userId:string,tab:ProjectsTab){preferredTab={userId,tab}}
+/** Fila implicită: preferința pentru acest cont; altfel „Publicate” dacă există proiecte publicate, altfel „Ciorne”. */
+export function initialProjectsTab(items:PublicProject[],userId:string):ProjectsTab{
+ if(preferredTab?.userId===userId)return preferredTab.tab;
+ return items.some(p=>p.status==='published')?'published':'draft';
 }
 
-export function MyProjectsView({state,onRetry,nav}:{state:{status:'loading'|'ready'|'error';items:PublicProject[];error?:ErrorInfo};onRetry:()=>void;nav:(r:string)=>void}){
+export function MyProjects({api,userId,nav}:{api:ProjectsApi;userId:string;nav:(r:string)=>void}){
+ const [state,setState]=useState<{status:'loading'|'ready'|'error';items:PublicProject[];error?:ErrorInfo}>({status:'loading',items:[]});
+ const [tab,setTab]=useState<ProjectsTab|null>(null);
+ const load=async()=>{setState(s=>({...s,status:'loading'}));try{const items=await api.mine(userId);setState({status:'ready',items});setTab(t=>t??initialProjectsTab(items,userId))}catch(e){setState({status:'error',items:[],error:loadErrorInfo(e)})}};
+ useEffect(()=>{void load()},[]);
+ const choose=(t:ProjectsTab)=>{setTab(t);preferProjectsTab(userId,t)};
+ return <MyProjectsView state={state} tab={tab??'draft'} onTab={choose} onRetry={()=>void load()} nav={nav}/>;
+}
+
+export function MyProjectsView({state,tab,onTab,onRetry,nav}:{state:{status:'loading'|'ready'|'error';items:PublicProject[];error?:ErrorInfo};tab:ProjectsTab;onTab:(t:ProjectsTab)=>void;onRetry:()=>void;nav:(r:string)=>void}){
  const full=state.items.length>=MAX_PROJECTS;
- const drafts=state.items.filter(p=>p.status==='draft').length;
+ const published=state.items.filter(p=>p.status==='published'),drafts=state.items.filter(p=>p.status==='draft');
+ const shown=tab==='published'?published:drafts;
+ const tabs:[ProjectsTab,string,number][]=[['published','Publicate',published.length],['draft','Ciorne',drafts.length]];
  return <>
   <Heading title={'Ideile tale,\nîn mișcare.'} eyebrow="PROIECTELE MELE"/>
   <p className="intro">Ciornele sunt vizibile doar ție. Proiectele publicate sunt vizibile utilizatorilor autentificați. Nu ai nevoie de un proiect ca să te alături altora.</p>
   {state.status==='ready'&&<><Button onClick={()=>nav('project-new')} disabled={full}><Plus size={18}/> Creează un proiect</Button>
-   <p className="caption">{state.items.length} din {MAX_PROJECTS} proiecte{state.items.length?` · ${drafts} ${drafts===1?'ciornă':'ciorne'}`:''}{full?' · Ai atins limita; șterge o ciornă pentru a crea alta.':''}</p></>}
+   <p className="caption">{state.items.length} din {MAX_PROJECTS} proiecte (publicate și ciorne){full?' · Ai atins limita; șterge o ciornă pentru a crea alta.':''}</p>
+   <div className="segmented match-tabs project-tabs" role="tablist" aria-label="Categorii de proiecte">{tabs.map(([id,label,n])=><button key={id} id={'tab-'+id} role="tab" aria-selected={tab===id} aria-controls="projects-panel" className={tab===id?'active':''} onClick={()=>onTab(id)}>{label} ({n})</button>)}</div></>}
   {state.status==='loading'?<Empty>Se încarcă proiectele…</Empty>
    :state.status==='error'?<Empty>Proiectele nu au putut fi încărcate.{state.error&&<><br/><small>{state.error.hint}</small><br/><small>Cod tehnic: {state.error.code}</small></>}<Button onClick={onRetry}>Încearcă din nou</Button></Empty>
-   :!state.items.length?<Empty>Nu ai încă proiecte. Creează o ciornă și public-o când este gata.</Empty>
-   :<div className="project-list">{state.items.map(p=><button key={p.id} className="panel project-row" onClick={()=>nav('project/'+p.id)}>
+   :<div id="projects-panel" role="tabpanel" aria-labelledby={'tab-'+tab}>{!shown.length
+    ?<Empty>{tab==='published'
+      ?(drafts.length?`Nu ai proiecte publicate. Ai ${drafts.length===1?'o ciornă':drafts.length+' ciorne'} în fila „Ciorne”; o poți publica după ce completezi câmpurile obligatorii.`:'Nu ai proiecte publicate. Creează un proiect și publică-l când este gata.')
+      :(published.length?'Nu ai ciorne. Proiectele noi și cele retrase din publicare apar aici, vizibile doar ție.':'Nu ai încă proiecte. Creează unul și salvează-l ca ciornă oricând.')}</Empty>
+    :<div className="project-list">{shown.map(p=><button key={p.id} className="panel project-row" onClick={()=>nav('project/'+p.id)}>
      <span className="row"><strong>{p.title.trim()||'Proiect fără titlu'}</strong><span className={'tag'+(p.status==='published'?' green':'')}>{p.status==='published'?'Publicat':'Ciornă'}</span></span>
      <small>{[stageName(p.stage),p.industry,locationLabel(p)].filter(Boolean).join(' · ')||'Informații generale necompletate'}</small>
      <small>Actualizat la {dateRo(p.updated_at)}</small>
-    </button>)}</div>}
+    </button>)}</div>}</div>}
  </>;
 }
 
@@ -80,7 +99,7 @@ export function ProjectWizard({api,userId,initial,nav,notify,startStep=0}:{api:P
    let expected=saved.updated_at;
    if(overwrite&&saved.id){const latest=await api.get(saved.id,userId);expected=latest?.project.updated_at??expected}
    const r=await api.save(saved.id,expected,status,form);
-   setSaved({id:r.id,updated_at:r.updated_at,status:r.status,form});setConflict(false);setModal(null);
+   setSaved({id:r.id,updated_at:r.updated_at,status:r.status,form});setConflict(false);setModal(null);preferProjectsTab(userId,r.status);
    if(status==='published'){notify(published?'Proiectul publicat a fost actualizat.':'Proiectul a fost publicat.');nav('project/'+r.id)}
    else{notify('Ciorna a fost salvată.');if(!saved.id)history.replaceState(null,'','#project-edit/'+r.id)}
   }catch(e){
@@ -169,9 +188,9 @@ export function ProjectPage({api,userId,id,nav,notify}:{api:ProjectsApi;userId:s
  useEffect(()=>{void load()},[id]);
  const act=async(fn:()=>Promise<unknown>,ok:string,after?:()=>void)=>{if(busy)return;setBusy(true);setMessage('');try{await fn();setModal(null);notify(ok);if(after)after();else await load()}catch(e){setModal(null);const c=codeOf(e);setMessage(c==='PT409'?'Proiectul a fost modificat între timp, pe alt dispozitiv. Pagina a fost reîncărcată; verifică versiunea actuală.':projectErrorMessage(c));if(c==='PT409')await load()}finally{setBusy(false)}};
  return <ProjectPageView state={state} userId={userId} nav={nav} message={message} busy={busy} modal={modal} setModal={setModal} onRetry={()=>void load()}
-  onPublish={b=>{const miss=publishMissing(formFromProject(b.project,b.priv));if(miss.length){setMessage(`Pentru publicare completează: ${miss.map(m=>m.text).join(', ')}.`);return}void act(()=>api.setStatus(b.project.id,b.project.updated_at,'published'),'Proiectul a fost publicat.')}}
-  onUnpublish={b=>void act(()=>api.setStatus(b.project.id,b.project.updated_at,'draft'),'Proiectul a fost retras din publicare și este acum o ciornă privată.')}
-  onDelete={b=>void act(()=>api.remove(b.project.id),'Ciorna a fost ștearsă definitiv.',()=>nav('projects'))}/>;
+  onPublish={b=>{const miss=publishMissing(formFromProject(b.project,b.priv));if(miss.length){setMessage(`Pentru publicare completează: ${miss.map(m=>m.text).join(', ')}.`);return}void act(()=>api.setStatus(b.project.id,b.project.updated_at,'published').then(()=>preferProjectsTab(userId,'published')),'Proiectul a fost publicat.')}}
+  onUnpublish={b=>{void act(()=>api.setStatus(b.project.id,b.project.updated_at,'draft').then(()=>preferProjectsTab(userId,'draft')),'Proiectul a fost retras din publicare și este acum o ciornă privată.')}}
+  onDelete={b=>{void act(()=>api.remove(b.project.id).then(()=>preferProjectsTab(userId,'draft')),'Ciorna a fost ștearsă definitiv.',()=>nav('projects'))}}/>;
 }
 
 export function ProjectPageView({state,userId,nav,message,busy,modal,setModal,onRetry,onPublish,onUnpublish,onDelete}:{

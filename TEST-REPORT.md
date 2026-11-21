@@ -188,3 +188,11 @@ Implementare pe PR #2 conform deciziilor finale din `docs/propunere-etapa-3-proi
 
 - Serverul din `test:e2e` imită API-ul; regulile reale sunt testate în `test:db`, pe o simulare locală a schemelor Supabase.
 - Limita de 20 și publicarea nu sunt testate automat pe buildit-dev (ar necesita date suplimentare); sunt acoperite local.
+
+### Actualizare · „Proiectele mele” cu file (22 noiembrie 2026)
+
+Doar organizarea interfeței; regulile de acces, migrarea și datele nu s-au schimbat. Filele **Publicate (n)** și **Ciorne (n)** apar sub butonul „Creează un proiect” și sub contorul total „X din 20 proiecte (publicate și ciorne)”; cardurile sunt neschimbate. Implicit: „Publicate” dacă există proiecte publicate, altfel „Ciorne”. După salvarea unei ciorne, publicare, retragere sau ștergere se selectează fila proiectului; alegerea manuală se păstrează la revenire (în memorie, per cont).
+
+Executate local: `npm run lint` 0 erori; `npm run build` reușit; `npm test` 62/62 unitare, 63 + 543 verificări de randare (17 noi: etichetele cu numere, fila selectată, poziția butonului deasupra filelor, mesajele pentru filele goale, contorul total la 20, fila implicită și preferința după acțiuni, inclusiv neaplicarea preferinței altui cont); `npm run test:db` 179/179 (neschimbat); `npm run test:e2e` 32/32 pași la 390 px și la 1366 px, cu server **simulat** — pas nou: fila implicită „Publicate”, trecerea în „Publicate” după publicare, mesaj pentru „Ciorne (0)”, trecerea în „Ciorne” după retragere, păstrarea filei alese manual și selectarea „Ciorne” după salvarea unei ciorne. Capturile de ecran pe telefon și laptop au fost verificate vizual.
+
+Neverificat încă pe buildit-dev sau manual pe Vercel Preview.

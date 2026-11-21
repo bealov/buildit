@@ -5,7 +5,7 @@ Decizii și justificare: [propunere-etapa-3-proiecte-reale.md](propunere-etapa-3
 
 ## Ce face
 
-- **Proiectele mele** (Mod Creator → Proiecte): lista proiectelor proprii, etichete *Ciornă* / *Publicat*, „X din 20 proiecte”; la 20, crearea este dezactivată.
+- **Proiectele mele** (Mod Creator → Proiecte): butonul „Creează un proiect” și contorul total „X din 20 proiecte (publicate și ciorne)”, apoi două file: **Publicate (n)** și **Ciorne (n)**, cu aceleași carduri. Implicit se deschide „Publicate” dacă există proiecte publicate, altfel „Ciorne”. După salvarea unei ciorne, publicare, retragere sau ștergere, lista se deschide pe fila în care se află proiectul; fila aleasă manual se păstrează la revenire. Fiecare filă goală are un mesaj explicativ. La 20 de proiecte, crearea este dezactivată.
 - **Formular în 6 pași** (ca în demo): Informații generale · Problema și soluția · Model de business · Date financiare · Echipă și materiale · Ce caută proiectul și publicare. Ciorna se salvează oricând, incompletă.
 - **Publicare** — obligatorii: titlu, descriere scurtă, industrie, stadiu (Idee / În dezvoltare / Deja lansat), locație (oraș sau „Remote / Online”), ce caută proiectul (Colegi / Parteneri / Investiție, selecție multiplă). Lipsurile sunt listate, iar baza de date refuză oricum un proiect incomplet.
 - **Finanțe** (EUR, max. 2 zecimale): 0, necompletat și „Nu am estimat încă” (nebifat implicit) rămân distincte. Toate sunt **private**. Public apare doar „Investiție căutată: … EUR” sau „Investiție de stabilit”, și numai dacă proiectul caută investiție. Debifarea investiției nu șterge suma.
@@ -54,6 +54,7 @@ Cont A (Creator, Mod Creator):
 6. Cu A: editează titlul → **Renunță** → „Renunță la modificări”: titlul vechi rămâne.
 7. Conflict: deschide editarea aceluiași proiect pe laptop și pe telefon; salvează pe telefon, apoi încearcă să salvezi pe laptop → mesaj de conflict, modificările rămân în formular; alege una dintre opțiuni.
 8. **Retrage din publicare** → B nu mai vede proiectul; **Șterge ciorna** → proiectul dispare din listă.
-9. Verifică pe telefon și pe laptop. Opțional: contul doar Investitor vede „Proiecte” neschimbat (în pregătire).
+9. În **Proiecte**, urmărește filele: proiectul publicat apare în „Publicate (n)”, cel retras sau salvat ca ciornă în „Ciorne (n)”; o filă goală afișează un mesaj; contorul „X din 20” rămâne total.
+10. Verifică pe telefon și pe laptop. Opțional: contul doar Investitor vede „Proiecte” neschimbat (în pregătire).
 
 Limita de 20 este verificată automat (local); manual ar necesita 20 de proiecte.

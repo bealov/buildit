@@ -121,12 +121,28 @@ const privP={unknown_financials:['fixed_costs'],plan_links:['https://plan.exampl
 const ownerCard={id:'A',display_name:'Ana Pop',avatarUrl:'https://signed/a'};
 const page=(bundle,userId,extra={})=>html(React.createElement(PP.ProjectPageView,{state:{status:'ready',bundle},userId,nav:noop,message:'',busy:false,modal:null,setModal:noop,onRetry:noop,onPublish:noop,onUnpublish:noop,onDelete:noop,...extra}));
 // Lista
-{const h=html(React.createElement(PP.MyProjectsView,{state:{status:'ready',items:[proj(),proj({id:'p2',status:'published',title:'',stage:'',industry:'',is_remote:false})]},onRetry:noop,nav:noop}));
- for(const t of ['PROIECTELE MELE','Creează un proiect','Ciornă','Publicat','Atelier verde','Proiect fără titlu','În dezvoltare','Remote / Online','2 din 20 proiecte','1 ciornă','Nu ai nevoie de un proiect'])has(h,t,'proiectele mele');
- lacks(h,'25.000','lista nu afișează sume');}
-{const items=Array.from({length:20},(_,i)=>proj({id:'p'+i}));const h=html(React.createElement(PP.MyProjectsView,{state:{status:'ready',items},onRetry:noop,nav:noop}));has(h,'Ai atins limita','limită 20');assert.ok(/<button[^>]*disabled=""[^>]*>.*Creează un proiect/.test(h),'butonul de creare este dezactivat la 20');checks++;}
-has(html(React.createElement(PP.MyProjectsView,{state:{status:'ready',items:[]},onRetry:noop,nav:noop})),'Nu ai încă proiecte','listă goală');
-has(html(React.createElement(PP.MyProjectsView,{state:{status:'error',items:[],error:{code:'PGRST205',hint:'Aplică migrarea'}},onRetry:noop,nav:noop})),'Cod tehnic: PGRST205','eroare listă');
+const mp=(items,tab,extra={})=>html(React.createElement(PP.MyProjectsView,{state:{status:'ready',items},tab,onTab:noop,onRetry:noop,nav:noop,...extra}));
+const twoP=[proj(),proj({id:'p2',status:'published',title:'',stage:'',industry:'',is_remote:false})];
+{const h=mp(twoP,'published');
+ for(const t of ['PROIECTELE MELE','Creează un proiect','Publicate (1)','Ciorne (1)','2 din 20 proiecte (publicate și ciorne)','Proiect fără titlu','Publicat','Nu ai nevoie de un proiect'])has(h,t,'fila Publicate');
+ lacks(h,'Atelier verde','fila Publicate nu arată ciornele');lacks(h,'25.000','lista nu afișează sume');
+ assert.ok(h.indexOf('Creează un proiect')<h.indexOf('Publicate (1)'),'butonul de creare este deasupra filelor');checks++;
+ assert.ok(/aria-selected="true"[^>]*>Publicate \(1\)/.test(h),'fila Publicate este selectată');checks++;}
+{const h=mp(twoP,'draft');has(h,'Atelier verde','fila Ciorne');has(h,'În dezvoltare','fila Ciorne');has(h,'Remote / Online','fila Ciorne');lacks(h,'Proiect fără titlu','fila Ciorne nu arată publicatele');
+ assert.ok(/aria-selected="true"[^>]*>Ciorne \(1\)/.test(h),'fila Ciorne este selectată');checks++;}
+has(mp([proj()],'published'),'Nu ai proiecte publicate. Ai o ciornă în fila „Ciorne”','Publicate goală, cu ciorne');
+has(mp([proj(),proj({id:'p3'})],'published'),'Ai 2 ciorne','Publicate goală, 2 ciorne');
+has(mp([proj({status:'published'})],'draft'),'Nu ai ciorne. Proiectele noi și cele retrase','Ciorne goală');
+{const h=mp([],'draft');has(h,'Nu ai încă proiecte','fără proiecte');has(h,'Publicate (0)','fără proiecte');has(h,'Ciorne (0)','fără proiecte');}
+{const items=[...Array.from({length:15},(_,i)=>proj({id:'d'+i})),...Array.from({length:5},(_,i)=>proj({id:'q'+i,status:'published'}))];const h=mp(items,'published');has(h,'20 din 20 proiecte','limita include ambele categorii');has(h,'Ai atins limita','limită 20');assert.ok(/<button[^>]*disabled=""[^>]*>.*Creează un proiect/.test(h),'butonul de creare este dezactivat la 20');checks++;}
+has(html(React.createElement(PP.MyProjectsView,{state:{status:'error',items:[],error:{code:'PGRST205',hint:'Aplică migrarea'}},tab:'draft',onTab:noop,onRetry:noop,nav:noop})),'Cod tehnic: PGRST205','eroare listă');
+// Fila implicită și preferința după acțiuni
+assert.equal(PP.initialProjectsTab(twoP,'X'),'published','implicit: Publicate dacă există');checks++;
+assert.equal(PP.initialProjectsTab([proj()],'X'),'draft','implicit: Ciorne dacă nu există publicate');checks++;
+assert.equal(PP.initialProjectsTab([],'X'),'draft');checks++;
+PP.preferProjectsTab('X','draft');assert.equal(PP.initialProjectsTab(twoP,'X'),'draft','după salvarea unei ciorne / retragere: Ciorne');checks++;
+assert.equal(PP.initialProjectsTab(twoP,'Y'),'published','preferința altui cont nu se aplică');checks++;
+PP.preferProjectsTab('X','published');assert.equal(PP.initialProjectsTab([proj()],'X'),'published','după publicare: Publicate');checks++;
 // Pagina proiectului: proprietar (ciornă)
 {const h=page({project:proj(),priv:privP,owner:ownerCard},'A');
  for(const t of ['Secțiuni necompletate (9)','CIORNĂ, VIZIBILĂ DOAR ȚIE','Editează proiectul','Publică','Șterge ciorna','Date private (vizibile doar ție)','Nu am estimat încă','Necompletat','0 EUR','https://plan.example/secret','Proprietar (tu)','Investiție căutată: 25.000,5 EUR','Caută: Colegi · Investiție','Remote / Online'])has(h,t,'proprietar ciornă');
