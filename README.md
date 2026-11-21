@@ -9,8 +9,12 @@ Necesită Node.js 22.6+ (recomandat 24) pentru testele TypeScript (`--experiment
 ```sh
 npm ci
 npx vite --host 0.0.0.0
-npm test
+npm test          # reguli, randare demo și conturi reale (fără rețea)
+npm run lint
 npm run build
+npm run test:db   # migrarea și RLS pe un Postgres local temporar (necesită Postgres 15+)
+npm run test:e2e  # browser (Playwright/Chromium) cu un server Supabase simulat local
+npm run test:remote  # două conturi pe buildit-dev; doar după configurare (vezi docs/)
 ```
 
 Build: `dist`. Pentru Vercel: importați sursa, preset Vite, build `npm run build`, output `dist`. Configurația este în `vercel.json` (și `netlify.toml` pentru Netlify). Rutele folosesc hash și funcționează pe hosting static, fără rescrieri de rute.
@@ -53,7 +57,7 @@ Cardul Sponsorizat apare deasupra listei organice, fără poziție. Selecția fo
 
 Poza de profil acceptă JPG/PNG/WebP de maximum 5 MB, cu miniatură locală de 256 × 256 px. „Link adițional” are explicația LinkedIn/portofoliu/site web. Titlurile normalizează secvențele literale `\n`.
 
-Starea este păstrată în localStorage (`buildit-demo-v1`), iar documentele în IndexedDB (`buildit-files`). Datele vechi sunt păstrate, fără resetare la actualizare. Nu există autentificare, plăți, investiții, AI real sau mesagerie. Pentru un produs real sunt necesare backend, autorizare server, storage privat și integrarea explicită a serviciilor respective.
+Starea demo este păstrată în localStorage (`buildit-demo-v1`), iar documentele în IndexedDB (`buildit-files`). Datele vechi sunt păstrate, fără resetare la actualizare. În modul demo nu există autentificare, plăți, investiții, AI real sau mesagerie. Conturile reale (etapa 1, mai jos) acoperă deocamdată doar autentificarea, profilurile, fotografiile și rolurile.
 
 ## Traseu de demonstrație
 
@@ -77,3 +81,40 @@ Proiectele noi pornesc cu câmpuri financiare goale și bife debifate. `unfilled
 ## Marketplace independent — 1 noiembrie 2026
 
 Un Creator poate vinde planuri fără niciun proiect pentru Match. Ofertele au proprietar și categorie proprii; asocierea cu un proiect este opțională. Publicarea nu creează proiecte și nu înscrie planul în Match sau în clasamentul proiectelor. Ofertele vechi își păstrează proprietarul și categoria din proiectul asociat. Documentele cumpărate sunt accesate după ID-ul ofertei, separat de documentele Match. Administrarea și istoricul vânzărilor includ ofertele independente.
+
+## Conturi reale — etapa 1 (2 noiembrie 2026)
+
+Autentificare și profiluri reale cu Supabase, **doar pentru mediul de test** (proiectul `buildit-dev`, local și Vercel Preview). Producția rămâne demo: fără variabilele de mai jos, aplicația funcționează exact ca prototipul, iar biblioteca Supabase nu este descărcată.
+
+- **Activare:** `VITE_ENABLE_REAL_ACCOUNTS=true`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY` (vezi `.env.example`). Variabila de activare controlează doar interfața; protecția datelor vine din permisiunile și regulile RLS din baza de date. O cheie secretă configurată din greșeală este refuzată.
+- **Intrare:** în fereastra **Demo**, opțiunea **Cont real · mediu de test**. Contul real și modul demo sunt separate: nu se importă date demo, iar selectorul de conturi demo nu schimbă identitatea reală.
+- **Cont:** înregistrare cu email și parolă (minimum 10 caractere), confirmarea emailului, autentificare, deconectare, resetarea parolei, sesiune păstrată după reîncărcare. Linkurile din email se întorc cu `?code=…` sau `?token_hash=…`, compatibil cu rutele `#hash`.
+- **Roluri:** la înregistrare se alege rolul inițial (Creator sau Investitor); al doilea rol se activează din Profil/Setări. Comutatorul „Mod Creator / Mod Investitor” apare doar cu ambele roluri active și schimbă doar interfața. Activarea rolului Investitor nu înseamnă investitor verificat. Rolurile sunt verificate în baza de date; nu există roluri administrative.
+- **Profil:** public pentru utilizatorii autentificați (nume, fotografie, descriere, oraș, companie, industrie, obiective). Privat: emailul contului, linkul adițional, preferințele de afișare a contactului (implicit ascunse) și preferințele de investitor. Fotografia este într-un bucket privat și se afișează prin linkuri temporare.
+- **Conturi fără profil** (de exemplu create din Dashboard): flux „Completează profilul”, fără nume sau rol inventat.
+- **Module neimplementate** pentru conturile reale (Proiecte, Explore, Match, Marketplace, Clasament): explicație scurtă și acces la demo. La deconectare sau schimbarea contului, datele contului precedent sunt eliminate din interfață.
+
+Fișiere: `supabase/migrations/20261102000000_profiles_and_roles.sql`, `src/real/*`, `src/entry.tsx`. Ghiduri: [docs/etapa-1-conturi-reale.md](docs/etapa-1-conturi-reale.md) (migrare, conturi de test, Vercel Preview, verificarea cu două conturi) și [docs/etapa-1-email.md](docs/etapa-1-email.md) (SMTP, șabloane, adrese de redirecționare).
+
+Dependențe pentru etapele următoare: proiectele, ofertele Marketplace, achizițiile și Match-ul vor folosi `profiles.id` ca proprietar și `profile_roles` pentru drepturi; afișarea contactului după Match va citi preferințele din `profiles_private` printr-o funcție care verifică Match-ul confirmat. Match-ul cu propriile proiecte și cumpărarea propriilor planuri vor fi interzise în baza de date.
+
+## Profil Creator: cum vrei să participi — 15 noiembrie 2026
+
+Rolurile rămân **Creator** și **Investitor** (unul sau ambele). În profilul Creator, secțiunea „Cum vrei să participi?” explică: „Dezvoltă un proiect sau contribuie la unul.” și oferă două intenții independente, care pot fi bifate împreună: „Dezvolt un proiect” și „Vreau să mă alătur unui proiect”. Intențiile nu sunt roluri de autentificare și nu cer un proiect sau un plan de afaceri.
+
+- Cu „Vreau să mă alătur unui proiect”: **Competențe** (Marketing, Vânzări, Design, Programare, Finanțe, Coordonare de echipă și competențe proprii; maximum 15, fiecare de cel mult 40 de caractere, fără duplicate), **Rol dorit** (Cofondator, Membru al echipei, Manager de proiect, Team leader) și **Disponibilitate** în ore pe săptămână (1–168). „Cofondator” este doar un rol căutat; nu acordă statut sau drepturi.
+- Debifarea unei intenții ascunde câmpurile, dar nu le șterge. Profilurile existente nu primesc intenții automat. Pagina de profil arată intențiile și, dacă „alătur” este activă, competențele, rolul dorit și orele.
+- Conturi reale: coloane noi în `profiles` (vizibile utilizatorilor autentificați, modificabile doar de proprietar), adăugate de migrarea `supabase/migrations/20261115000000_creator_participation.sql`; pașii de aplicare sunt în [docs/etapa-1b-participare.md](docs/etapa-1b-participare.md). Demo: câmpul opțional `participation` din profil, în localStorage.
+- Matching-ul „Descoperă proiecte” / „Descoperă oameni” nu este inclus încă.
+
+## Match · „Descoperă oameni” — conturi reale (21 noiembrie 2026)
+
+În **modul Creator**, Match arată creatorii care au bifat „Vreau să mă alătur unui proiect” (inclusiv cei care dezvoltă și un proiect), fără propriul profil și fără a fi nevoie de un proiect propriu. Carduri cu fotografie sau inițiale, competențe, rol dorit și disponibilitate; filtre după competență, rol dorit și „Minimum ore/săptămână” (orele necompletate nu sunt tratate ca 0), „Resetează filtrele”, rezultate câte 12 cu „Arată mai multe”. Singura acțiune este „Vezi profilul” (date publice, fără contact). Modul Investitor și demo-ul nu se schimbă; „Descoperă proiecte”, conexiunile cu investitorii și cererile de colaborare urmează.
+
+Datele vin din funcția `public.discover_people` (migrarea `supabase/migrations/20261121000000_discover_people.sql`), care rulează cu drepturile utilizatorului (RLS activ), doar pentru utilizatorii autentificați, întoarce doar câmpuri publice și maximum 50 de rezultate pe apel. Fotografiile rămân în bucket-ul privat și se afișează prin linkuri temporare. Aplicare și verificare: [docs/etapa-2a-descopera-oameni.md](docs/etapa-2a-descopera-oameni.md).
+
+## Proiecte reale — conturi reale (22 noiembrie 2026)
+
+În **modul Creator**, „Proiecte” deschide **Proiectele mele**: ciorne private și proiecte publicate (vizibile utilizatorilor autentificați), maximum 20 pe cont. Formularul în 6 pași păstrează structura din demo; ciorna se salvează incompletă, iar publicarea cere titlu, descriere scurtă, industrie, stadiu (Idee / În dezvoltare / Deja lansat), locație (oraș sau „Remote / Online”) și ce caută proiectul (colegi, parteneri, investiție). Datele financiare (EUR, max. 2 zecimale; 0 ≠ necompletat ≠ „Nu am estimat încă”) și linkurile către plan sunt private; public apare doar investiția căutată („… EUR” sau „Investiție de stabilit”), dacă proiectul caută investiție. Editarea unui proiect publicat devine vizibilă doar după „Actualizează proiectul publicat”; conflictele între dispozitive sunt semnalate fără pierderea modificărilor; retragerea transformă proiectul în ciornă; doar ciornele se pot șterge.
+
+Regulile sunt impuse în baza de date (migrarea `supabase/migrations/20261122000000_projects.sql`, RLS activ, salvare atomică prin `save_project`). Ghid: [docs/etapa-3-proiecte-reale.md](docs/etapa-3-proiecte-reale.md). Descoperă proiecte, colaborările și interesul investitorilor urmează.
