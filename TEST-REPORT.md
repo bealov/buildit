@@ -140,11 +140,21 @@ Funcție nouă în modul Creator; migrare nouă `20261121000000_discover_people.
 
 **Browser (`test:e2e`), 8 pași noi:** listă cu profilurile corecte (fără propriul profil, Investitori sau Creatori care nu vor să se alăture), fără emailuri și fără butoane de like/invitație/mesaj; fotografii prin linkuri semnate obținute într-un singur apel; „Arată mai multe”; filtrele de competență, rol și ore (inclusiv necompletat ≠ 0) și „Resetează filtrele”; valoare invalidă; „Vezi profilul” cu date publice și revenire cu filtrele păstrate; eroare cu reîncercare (cod tehnic) și listă goală fără profiluri fictive; al doilea cont (C) îl vede pe A și nu se vede pe sine; contul doar Investitor vede Match neschimbat.
 
-### Pregătite, încă nerulate pe buildit-dev
+### Pe buildit-dev · 21 noiembrie 2026
 
-- Aplicarea migrării `20261121000000_discover_people.sql` și interogarea de verificare din ghid.
-- `verifica-buildit-dev` (GitHub Actions): verificări noi **doar de citire** pentru „Descoperă oameni”. Verificate pe un server simulat: stare finală identică cu cea inițială.
-- Verificarea manuală pe Vercel Preview cu două conturi (pașii din ghid).
+**Migrare:** `20261121000000_discover_people.sql` aplicată pe buildit-dev. Interogarea de verificare din ghid a returnat valorile așteptate: `prosecdef = false` (rulează cu drepturile apelantului), doar citire `true`, acces vizitatori `false`, acces utilizatori autentificați `true` (raportat de utilizator).
+
+**Automat (GitHub Actions):** „Permisiuni buildit-dev”, [rularea #4 (44892885662)](https://github.com/bealov/buildit/actions/runs/44892885662), commit testat `0c57295`, 21 noiembrie 2026 — **82 trecute, 0 eșuate, 0 omise.** Include, pe lângă verificările anterioare de permisiuni și păstrare a datelor: vizitatorul nu poate apela `discover_people`; pentru ambele conturi, funcția răspunde, propriul profil nu apare, rezultatele conțin doar câmpuri publice și doar Creatori care vor să se alăture, maximum 50 pe pagină, paginare fără dubluri; în ambele direcții, celălalt cont apare conform regulilor, iar filtrele de competență (fără diferență de majuscule), rol dorit și ore (necompletat ≠ 0) se comportă corect pe datele reale ale conturilor. Verificarea finală a confirmat că profilurile, datele private, rolurile și fotografiile au rămas neschimbate. Rularea nu a mai afișat avertismentele despre Node.js 20, `punycode` sau `url.parse()` (acțiuni `checkout` v7.0.1 și `setup-node` v7.1.0).
+
+**Manual, pe Vercel Preview, cu două conturi reale (raportat de utilizator):**
+- Din contul „Maria” apare profilul „Beatrice L”, după activarea opțiunii „Vreau să mă alătur unui proiect” pe acesta.
+- „Vezi profilul” deschide profilul „Beatrice L”, fără email vizibil.
+- Filtrul de competență exclude profilul când textul căutat nu corespunde competențelor sale.
+- Filtrul de rol dorit funcționează.
+- O valoare a filtrului „Minimum ore/săptămână” peste disponibilitatea declarată ascunde profilul.
+- „Resetează filtrele” readuce profilul în rezultate.
+
+**Neverificate manual** (acoperite doar de testele automate de mai sus): excluderea propriului profil în interfață, „Arată mai multe”, opțiunea de includere a profilurilor fără ore, valoarea invalidă la ore, revenirea din profil cu filtrele păstrate, mesajele de eroare și de listă goală, comportamentul în Mod Investitor, afișarea pe telefon.
 
 ### Limite
 
