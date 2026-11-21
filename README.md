@@ -106,3 +106,9 @@ Rolurile rămân **Creator** și **Investitor** (unul sau ambele). În profilul 
 - Debifarea unei intenții ascunde câmpurile, dar nu le șterge. Profilurile existente nu primesc intenții automat. Pagina de profil arată intențiile și, dacă „alătur” este activă, competențele, rolul dorit și orele.
 - Conturi reale: coloane noi în `profiles` (vizibile utilizatorilor autentificați, modificabile doar de proprietar), adăugate de migrarea `supabase/migrations/20261115000000_creator_participation.sql`; pașii de aplicare sunt în [docs/etapa-1b-participare.md](docs/etapa-1b-participare.md). Demo: câmpul opțional `participation` din profil, în localStorage.
 - Matching-ul „Descoperă proiecte” / „Descoperă oameni” nu este inclus încă.
+
+## Match · „Descoperă oameni” — conturi reale (21 noiembrie 2026)
+
+În **modul Creator**, Match arată creatorii care au bifat „Vreau să mă alătur unui proiect” (inclusiv cei care dezvoltă și un proiect), fără propriul profil și fără a fi nevoie de un proiect propriu. Carduri cu fotografie sau inițiale, competențe, rol dorit și disponibilitate; filtre după competență, rol dorit și „Minimum ore/săptămână” (orele necompletate nu sunt tratate ca 0), „Resetează filtrele”, rezultate câte 12 cu „Arată mai multe”. Singura acțiune este „Vezi profilul” (date publice, fără contact). Modul Investitor și demo-ul nu se schimbă; „Descoperă proiecte”, conexiunile cu investitorii și cererile de colaborare urmează.
+
+Datele vin din funcția `public.discover_people` (migrarea `supabase/migrations/20261121000000_discover_people.sql`), care rulează cu drepturile utilizatorului (RLS activ), doar pentru utilizatorii autentificați, întoarce doar câmpuri publice și maximum 50 de rezultate pe apel. Fotografiile rămân în bucket-ul privat și se afișează prin linkuri temporare. Aplicare și verificare: [docs/etapa-2a-descopera-oameni.md](docs/etapa-2a-descopera-oameni.md).

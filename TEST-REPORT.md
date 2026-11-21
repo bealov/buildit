@@ -121,3 +121,31 @@ Migrare nouă: `supabase/migrations/20261115000000_creator_participation.sql` (m
 - Cauză: codul de pe ramură (secțiunea „Cum vrei să participi”) cerea coloane noi din `profiles`, dar migrarea `20261115000000_creator_participation.sql` nu fusese aplicată pe buildit-dev (verificat în SQL Editor: 0 din 5 coloane). Reprodus local: cererea eșua cu `42703 column "wants_to_develop" does not exist`.
 - Rezolvare: migrarea a fost aplicată pe buildit-dev; profilurile se încarcă din nou (confirmat manual). Datele, rolurile și fotografiile nu au fost afectate.
 - Prevenire: ecranul de eroare afișează acum un cod tehnic și o explicație (pentru coloane lipsă: „aplică migrările noi, în ordine”). Regula de lucru: orice migrare nouă din `supabase/migrations` se aplică pe buildit-dev înainte de testarea Preview-ului care o folosește.
+
+## Match · „Descoperă oameni” pentru conturile reale · 21 noiembrie 2026
+
+Funcție nouă în modul Creator; migrare nouă `20261121000000_discover_people.sql` (doar o funcție de citire, `SECURITY INVOKER`, fără modificări de tabele sau RLS). Ghid: `docs/etapa-2a-descopera-oameni.md`.
+
+### Executate și trecute (local, fără buildit-dev)
+
+| Comandă | Rezultat |
+|---|---|
+| `npm run lint` | 0 erori |
+| `npm run build` | reușit |
+| `npm test` | 56/56 teste unitare; 63 verificări de randare demo; 427 verificări de randare pentru conturile reale |
+| `npm run test:db` | 128/128, cu expunerea automată dezactivată și activată (Postgres 16 local, simulare a schemelor Supabase). Baza de test este creată acum în UTF-8, ca în Supabase (înainte era `SQL_ASCII`, care trata greșit diacriticele); toate verificările anterioare trec și în UTF-8 |
+| `npm run test:e2e` | 22/22 pași în Chromium (telefon 390 px și laptop 1366 px), cu server Supabase **simulat** |
+
+**Baza de date (`test:db`), 32 de verificări noi:** funcția rulează cu drepturile apelantului și este doar de citire; vizitatorii sunt refuzați; rezultatul nu conține câmpuri private; apar doar Creatorii cu „Vreau să mă alătur” (inclusiv cei care dezvoltă și un proiect și profilurile incomplete); sunt excluși propriul profil, Investitorii fără rol Creator și Creatorii care nu vor să se alăture; filtru de competență parțial, fără diferență de majuscule sau diacritice („analiza” găsește „Analiză”), cu `%` tratat ca text; filtru de rol (rol necunoscut → listă goală); minimum de ore cu orele necompletate tratate ca necunoscute, nu ca 0, și opțiunea de a le include; ordine stabilă, paginare fără dubluri, limită între 1 și 50; datele celorlalți rămân protejate la modificare.
+
+**Browser (`test:e2e`), 8 pași noi:** listă cu profilurile corecte (fără propriul profil, Investitori sau Creatori care nu vor să se alăture), fără emailuri și fără butoane de like/invitație/mesaj; fotografii prin linkuri semnate obținute într-un singur apel; „Arată mai multe”; filtrele de competență, rol și ore (inclusiv necompletat ≠ 0) și „Resetează filtrele”; valoare invalidă; „Vezi profilul” cu date publice și revenire cu filtrele păstrate; eroare cu reîncercare (cod tehnic) și listă goală fără profiluri fictive; al doilea cont (C) îl vede pe A și nu se vede pe sine; contul doar Investitor vede Match neschimbat.
+
+### Pregătite, încă nerulate pe buildit-dev
+
+- Aplicarea migrării `20261121000000_discover_people.sql` și interogarea de verificare din ghid.
+- `verifica-buildit-dev` (GitHub Actions): verificări noi **doar de citire** pentru „Descoperă oameni”. Verificate pe un server simulat: stare finală identică cu cea inițială.
+- Verificarea manuală pe Vercel Preview cu două conturi (pașii din ghid).
+
+### Limite
+
+- Serverul din `test:e2e` imită API-ul; regulile reale ale funcției sunt testate în `test:db`, pe o simulare locală a schemelor Supabase.

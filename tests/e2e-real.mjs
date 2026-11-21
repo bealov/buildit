@@ -19,7 +19,8 @@ execFileSync('npx',['vite','build','--outDir',demoOut,'--emptyOutDir','--logLeve
 // Date simulate
 const users={
  A:{id:'aaaaaaaa-0000-4000-8000-000000000001',email:'ana@test.invalid',password:'parola-ana-123'},
- B:{id:'bbbbbbbb-0000-4000-8000-000000000002',email:'bogdan@test.invalid',password:'parola-bogdan-123'}
+ B:{id:'bbbbbbbb-0000-4000-8000-000000000002',email:'bogdan@test.invalid',password:'parola-bogdan-123'},
+ C:{id:'cccccccc-0000-4000-8000-000000000003',email:'cora@test.invalid',password:'parola-cora-12345'}
 };
 const db={
  profiles:{[users.A.id]:{id:users.A.id,display_name:'Ana Pop',avatar_path:null,bio:'Fondatoare Atelier',city:'Cluj',company:'Atelier',industries:'',objectives:'',updated_at:'2026-11-02T10:00:00Z'}},
@@ -27,6 +28,28 @@ const db={
  profile_roles:[{user_id:users.A.id,role:'creator',activated_at:'2026-11-02T10:00:00Z'}],
  objects:{}
 };
+// Match · Descoperă oameni: profiluri suplimentare (doar în serverul simulat)
+const person=(id,name,extra={})=>({id,display_name:name,avatar_path:null,bio:'',city:'',company:'',industries:'',objectives:'',wants_to_develop:false,wants_to_join:true,skills:[],desired_roles:[],weekly_hours:null,updated_at:'2026-11-02T10:00:00Z',created_at:'2026-11-10T10:00:00Z',...extra});
+const extraPeople=[
+ person(users.C.id,'Cora Pop',{city:'Iași',wants_to_develop:true,skills:['Programare','Design'],desired_roles:['membru_echipa'],weekly_hours:20,avatar_path:`${users.C.id}/avatar.jpg`,created_at:'2026-11-20T10:00:00Z',bio:'Dezvoltatoare web.'}),
+ person('dddddddd-0000-4000-8000-000000000004','Dan Nou',{created_at:'2026-11-19T10:00:00Z'}),
+ person('eeeeeeee-0000-4000-8000-000000000005','Emil Investitor',{skills:['Finanțe'],weekly_hours:30}),
+ person('ffffffff-0000-4000-8000-000000000006','Filip Solo',{wants_to_join:false,skills:['Marketing'],weekly_hours:40}),
+ ...Array.from({length:12},(_,i)=>person(`99999999-0000-4000-8000-0000000000${String(i).padStart(2,'0')}`,`Membru ${i+1}`,{skills:['Vânzări'],weekly_hours:5,created_at:`2026-11-0${(i%9)+1}T1${i%10}:00:00Z`}))
+];
+const extraRoles=[{user_id:users.C.id,role:'creator'},{user_id:'dddddddd-0000-4000-8000-000000000004',role:'creator'},{user_id:'eeeeeeee-0000-4000-8000-000000000005',role:'investor'},{user_id:'ffffffff-0000-4000-8000-000000000006',role:'creator'},...extraPeople.slice(4).map(p=>({user_id:p.id,role:'creator'}))];
+const sim={failDiscover:false};
+function discoverPeople(me,b){
+ const fold=v=>String(v).toLocaleLowerCase('ro').replace(/[ăâ]/g,'a').replace(/î/g,'i').replace(/[șş]/g,'s').replace(/[țţ]/g,'t');
+ const skill=String(b.p_skill??'').trim(),role=String(b.p_role??'').trim(),lim=Math.min(Math.max(Number(b.p_limit??12)||12,1),50);
+ let rows=Object.values(db.profiles).filter(p=>p.id!==me.id&&p.wants_to_join&&db.profile_roles.some(r=>r.user_id===p.id&&r.role==='creator'))
+  .filter(p=>!skill||(p.skills||[]).some(s=>fold(s).includes(fold(skill))))
+  .filter(p=>!role||(p.desired_roles||[]).includes(role))
+  .filter(p=>b.p_min_hours==null||(p.weekly_hours!=null&&p.weekly_hours>=b.p_min_hours)||(p.weekly_hours==null&&b.p_include_unknown_hours))
+  .sort((x,y)=>(y.created_at||'').localeCompare(x.created_at||'')||y.id.localeCompare(x.id));
+ if(b.p_after_created_at&&b.p_after_id)rows=rows.filter(p=>(p.created_at||'')<b.p_after_created_at||((p.created_at||'')===b.p_after_created_at&&p.id<b.p_after_id));
+ return rows.slice(0,lim).map(({id,display_name,avatar_path,bio,city,skills,desired_roles,weekly_hours,wants_to_develop,created_at})=>({id,display_name,avatar_path,bio,city,skills,desired_roles,weekly_hours,wants_to_develop,created_at}));
+}
 const tokens=new Map(),codes=new Map(),log=[];
 const session=u=>{const t='tok-'+u.id+'-'+Math.random().toString(36).slice(2);tokens.set(t,u);return {access_token:t,token_type:'bearer',expires_in:3600,expires_at:Math.floor(Date.now()/1000)+3600,refresh_token:'ref-'+t,user:authUser(u)}};
 const authUser=u=>({id:u.id,aud:'authenticated',role:'authenticated',email:u.email,email_confirmed_at:'2026-11-02T10:00:00Z',app_metadata:{provider:'email'},user_metadata:{},identities:[],created_at:'2026-11-02T10:00:00Z',updated_at:'2026-11-02T10:00:00Z'});
@@ -91,7 +114,16 @@ const server=createServer(async(req,res)=>{
   db.profiles_private[me.id]={id:me.id,link:'',show_email_after_match:false,show_link_after_match:false,investor_min_budget:null,investor_max_budget:null,investor_stage:''};
   db.profile_roles.push({user_id:me.id,role:body.p_role,activated_at:new Date().toISOString()});return send(res,200,'');
  }
+ if(path==='/rest/v1/rpc/discover_people'){
+  if(!me)return send(res,401,{code:'42501',message:'permission denied for function discover_people'});
+  if(sim.failDiscover)return send(res,503,{code:'PGRST002',message:'Service unavailable'});
+  return send(res,200,discoverPeople(me,body));
+ }
  // ---- Storage
+ if(path==='/storage/v1/object/sign/avatars'&&method==='POST'){
+  if(!me)return send(res,400,{statusCode:'403',error:'Unauthorized'});
+  return send(res,200,(body.paths||[]).map(p=>({path:p,error:null,signedURL:`/object/sign/avatars/${p}?token=batch-${Date.now()}`})));
+ }
  const sign=path.match(/^\/storage\/v1\/object\/sign\/avatars\/(.+)$/);
  if(sign&&method==='POST'){if(!me)return send(res,400,{statusCode:'403',error:'Unauthorized'});return send(res,200,{signedURL:`/object/sign/avatars/${sign[1]}?token=signed-${Date.now()}`})}
  if(sign&&method==='GET')return send(res,200,JPEG,{'content-type':'image/jpeg'});
@@ -103,7 +135,7 @@ await new Promise(r=>server.listen(PORT,'127.0.0.1',r));
 
 // ---------------------------------------------------------------------------
 const browser=await chromium.launch();
-const context=await browser.newContext({viewport:{width:390,height:844}});
+const context=await browser.newContext({viewport:{width:Number(process.env.E2E_WIDTH||390),height:844}});
 const page=await context.newPage();
 const errors=[];page.on('pageerror',e=>errors.push(String(e)));page.on('console',m=>{if(m.type()==='error'&&!/Failed to load resource/.test(m.text()))errors.push(m.text())});
 const shot=async n=>{if(process.env.E2E_SHOTS)await page.screenshot({path:join(process.env.E2E_SHOTS,n+'.png'),fullPage:true})};
@@ -229,6 +261,82 @@ try{
   await page.getByLabel('Parolă nouă (minimum 10 caractere)').fill('parola-noua-ana-1');await page.getByLabel('Confirmă parola nouă').fill('parola-noua-ana-1');
   await page.getByRole('button',{name:'Salvează parola'}).click();await page.getByText('Parola a fost schimbată.').waitFor();
   assert.equal(users.A.password,'parola-noua-ana-1');
+ });
+ // ---- Match · Descoperă oameni (server simulat; regulile reale sunt testate în test:db)
+ const grid=()=>page.locator('.people-grid');
+ const cards=()=>page.locator('.people-grid .person-card');
+ const names=async()=>(await cards().locator('strong').allInnerTexts());
+ const waitCards=async n=>{await page.waitForFunction(k=>document.querySelectorAll('.people-grid .person-card').length===k&&!document.body.innerText.includes('Se caută persoane'),n)};
+ await step('Descoperă oameni (A, mod Creator): profilurile reale cu „Vreau să mă alătur”, fără propriul profil, fără Investitori sau Creatori care nu vor',async()=>{
+  for(const p of extraPeople)db.profiles[p.id]=p;db.profile_roles.push(...extraRoles);
+  for(const p of Object.values(db.profiles))p.created_at??='2026-11-02T10:00:00Z';
+  db.profiles[users.A.id].wants_to_join=true;
+  await page.getByRole('button',{name:'Match',exact:true}).click();
+  await page.getByRole('heading',{name:'Descoperă oameni'}).waitFor();
+  await waitCards(12);
+  const first=await names();
+  assert.ok(first.includes('Cora Pop')&&first.includes('Dan Nou'),'Creatori care vor să se alăture');
+  for(const n of ['Ana Pop','Emil Investitor','Filip Solo'])assert.ok(!first.includes(n),'exclus: '+n);
+  const t=await text();assert.ok(!t.includes('@test.invalid'),'fără emailuri');
+  assert.ok(await page.getByText('Necompletată').first().isVisible(),'profil incomplet: disponibilitatea nu devine 0');
+  for(const b of ['Invită','Mesaj','Like'])assert.equal(await page.getByRole('button',{name:b}).count(),0,'fără buton '+b);
+  const img=await cards().filter({hasText:'Cora Pop'}).locator('img').getAttribute('src');assert.ok(img.includes('/object/sign/avatars/')&&img.includes('token=batch-'),'fotografii semnate într-un singur apel');
+  await shot('5-descopera-oameni');
+ });
+ await step('paginare: „Arată mai multe” aduce restul, fără dubluri',async()=>{
+  await page.getByRole('button',{name:'Arată mai multe'}).click();await waitCards(14);
+  const all=await names();assert.equal(new Set(all).size,14);
+  assert.equal(await page.getByRole('button',{name:'Arată mai multe'}).count(),0);
+ });
+ await step('filtre: competență, rol, minimum ore (necompletat ≠ 0), resetare, valoare invalidă',async()=>{
+  await page.getByLabel('Competență').fill('PROGRAM');await waitCards(1);assert.deepEqual(await names(),['Cora Pop']);
+  await page.getByLabel('Competență').fill('zzz');await page.getByText('Nicio persoană nu corespunde filtrelor').waitFor();
+  await page.getByRole('button',{name:'Resetează filtrele'}).first().click();await waitCards(12);
+  await page.getByLabel('Rol dorit').selectOption('membru_echipa');await waitCards(1);assert.deepEqual(await names(),['Cora Pop']);
+  await page.getByRole('button',{name:'Resetează filtrele'}).first().click();await waitCards(12);
+  await page.getByLabel('Minimum ore/săptămână').fill('10');await waitCards(1);assert.deepEqual(await names(),['Cora Pop'],'Dan (necompletat) nu este tratat ca 0, membrii cu 5 ore sunt excluși');
+  await page.getByLabel('Include și persoanele fără disponibilitate completată').check();await waitCards(2);
+  assert.deepEqual((await names()).sort(),['Cora Pop','Dan Nou']);
+  await page.getByLabel('Minimum ore/săptămână').fill('0');await page.getByText('între 1 și 168').waitFor();
+  await page.getByRole('button',{name:'Resetează filtrele'}).first().click();await waitCards(12);
+ });
+ await step('„Vezi profilul”: detalii publice, fără contact; la revenire filtrele și lista rămân',async()=>{
+  await page.getByLabel('Rol dorit').selectOption('membru_echipa');await waitCards(1);
+  await cards().filter({hasText:'Cora Pop'}).getByRole('button',{name:'Vezi profilul'}).click();
+  await page.getByRole('heading',{name:'Cora Pop',level:2}).waitFor();
+  const t=await text();for(const s of ['Dezvoltatoare web.','Programare','Design','Membru al echipei','20 de ore','Iași','Contactul nu este afișat'])assert.ok(t.includes(s),s);
+  assert.ok(!t.includes('@test.invalid'));
+  assert.ok((await page.locator('.large-avatar img').getAttribute('src')).includes('/object/sign/avatars/'));
+  await page.getByRole('button',{name:'Înapoi la Descoperă oameni'}).click();
+  await waitCards(1);assert.equal(await page.getByLabel('Rol dorit').inputValue(),'membru_echipa');
+  await page.getByRole('button',{name:'Resetează filtrele'}).first().click();await waitCards(12);
+  await shot('6-profil-public');
+ });
+ await step('erori cu reîncercare și listă goală fără profiluri fictive',async()=>{
+  sim.failDiscover=true;await page.getByLabel('Rol dorit').selectOption('cofondator');
+  await page.getByText('Lista nu a putut fi încărcată').waitFor();await page.getByText('Cod tehnic: PGRST002').waitFor();
+  sim.failDiscover=false;await page.getByRole('button',{name:'Încearcă din nou'}).click();
+  await page.getByText('Nicio persoană nu corespunde filtrelor').waitFor();
+  const saved=Object.values(db.profiles).filter(p=>p.wants_to_join&&p.id!==users.A.id);saved.forEach(p=>p.wants_to_join=false);
+  await page.getByRole('button',{name:'Resetează filtrele'}).first().click();
+  await page.getByText('Încă nu există alți creatori care vor să se alăture').waitFor();
+  assert.equal(await cards().count(),0);
+  saved.forEach(p=>p.wants_to_join=true);
+ });
+ await step('al doilea cont (C): vede profilul lui A, nu se vede pe sine',async()=>{
+  await page.getByRole('button',{name:/Cont real · Ana/}).click();await page.getByRole('button',{name:'Ieși din cont'}).click();
+  await page.getByText('Te-ai deconectat.').waitFor();
+  await login(users.C);await page.getByRole('heading',{name:/Bună, Cora/}).waitFor();
+  await page.getByRole('button',{name:'Match',exact:true}).click();await waitCards(12);
+  const n=await names();assert.ok(n.includes('Ana Pop'),'A este vizibil pentru C');assert.ok(!n.includes('Cora Pop'),'C nu se vede pe sine');
+ });
+ await step('Investitor (B): Match rămâne neschimbat (în pregătire)',async()=>{
+  await page.getByRole('button',{name:/Cont real · Cora/}).click();await page.getByRole('button',{name:'Ieși din cont'}).click();
+  await page.getByText('Te-ai deconectat.').waitFor();
+  await login(users.B);await page.getByRole('heading',{name:/Bună, Bogdan/}).waitFor();
+  await page.getByRole('button',{name:'Match',exact:true}).click();
+  await page.getByText('Match-ul pentru conturile reale este în pregătire').waitFor();
+  assert.equal(await grid().count(),0);
  });
  await step('link expirat: mesaj clar, fără rută stricată',async()=>{
   await page.goto(`${ORIGIN}/?error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid#home`);

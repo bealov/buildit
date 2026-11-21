@@ -82,6 +82,7 @@ export function loadErrorInfo(e:unknown):{code:string;hint:string}{
  if(raw==='PGRST301'||raw==='PGRST303'||raw==='401'||/jwt/i.test(message))return {code:raw||'401',hint:'Sesiunea nu mai este valabilă. Ieși din cont și autentifică-te din nou.'};
  if(raw==='42501'||raw==='403')return {code:raw,hint:'Accesul a fost refuzat de regulile bazei de date.'};
  if(raw==='PGRST002'||raw==='PGRST000'||/^5\d\d$/.test(raw))return {code:raw,hint:'Serviciul Supabase este indisponibil momentan (de exemplu, proiectul este pus pe pauză sau pornește). Încearcă din nou peste un minut.'};
+ if(raw==='PGRST202'||raw==='42883')return {code:raw,hint:'Funcția de căutare nu există încă în baza de date. Aplică în Supabase migrarea 20261121000000_discover_people.sql.'};
  if(raw==='42703'||raw==='PGRST204')return {code:raw,hint:'Baza de date nu are încă ultimele modificări ale profilului. Aplică în Supabase migrările noi din supabase/migrations, în ordine.'};
  if(raw==='PGRST205'||raw==='42P01')return {code:raw,hint:'Tabelele profilului nu sunt disponibile prin API. Verifică migrarea și setările Data API.'};
  return {code:raw||'necunoscut',hint:'Încearcă din nou. Dacă problema continuă, trimite codul de mai sus.'};

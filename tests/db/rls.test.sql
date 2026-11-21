@@ -242,6 +242,78 @@ select t.expect_error('anon: NU vede datele de participare', $$select skills fro
 reset role;
 
 -- ---------------------------------------------------------------------------
+-- 8. Match · Descoperă oameni (public.discover_people)
+-- ---------------------------------------------------------------------------
+-- Conturi suplimentare (create și completate ca administrator, pentru a pregăti datele):
+-- F: Creator, vrea să se alăture, competențe și rol, FĂRĂ ore (profil incomplet)
+-- G: Creator, vrea să se alăture, fără competențe, roluri sau ore (profil incomplet)
+-- H: doar Investitor, cu wants_to_join bifat (trebuie EXCLUS: nu are rolul Creator)
+-- I: Creator care NU vrea să se alăture (trebuie EXCLUS)
+\set F '66666666-6666-6666-6666-666666666666'
+\set G '77777777-7777-7777-7777-777777777777'
+\set H '88888888-8888-8888-8888-888888888888'
+\set I '99999999-9999-9999-9999-999999999999'
+insert into auth.users (id, email, raw_user_meta_data) values
+  (:'F', 'f@test.invalid', '{"display_name":"Flavia Dev","initial_role":"creator"}'),
+  (:'G', 'g@test.invalid', '{"display_name":"George Gol","initial_role":"creator"}'),
+  (:'H', 'h@test.invalid', '{"display_name":"Horia Investitor","initial_role":"investor"}'),
+  (:'I', 'i@test.invalid', '{"display_name":"Irina Solo","initial_role":"creator"}');
+update public.profiles set wants_to_join = true, skills = array['Programare', 'Design'], desired_roles = array['membru_echipa'], weekly_hours = null, created_at = now() - interval '1 day' where id = :'F';
+update public.profiles set wants_to_join = true, created_at = now() - interval '2 days' where id = :'G';
+update public.profiles set wants_to_join = true, skills = array['Finanțe'], weekly_hours = 30 where id = :'H';
+update public.profiles set wants_to_join = false, wants_to_develop = true, skills = array['Marketing'], weekly_hours = 40 where id = :'I';
+update public.profiles set created_at = now() - interval '3 days' where id = '11111111-1111-1111-1111-111111111111';
+-- Starea lui A din secțiunea 7: Creator (+Investitor), ambele intenții, Marketing + Analiză de date, cofondator + team_leader, 10 ore.
+
+select t.expect_true('discover: funcția rulează cu drepturile apelantului (SECURITY INVOKER)', $$select not prosecdef from pg_proc where proname = 'discover_people'$$);
+select t.expect_true('discover: anon nu o poate apela', $$select not has_function_privilege('anon', 'public.discover_people(text, text, integer, boolean, timestamptz, uuid, integer)', 'execute')$$);
+select t.expect_true('discover: rezultatul nu conține câmpuri private (email, link, contact, buget)', $$select pg_get_function_result(oid) !~* '(email|link|show_|budget|investor_)' from pg_proc where proname = 'discover_people'$$);
+select t.expect_true('discover: RLS rămâne activ pe profiles și profile_roles', $$select bool_and(relrowsecurity) from pg_class where oid in ('public.profiles'::regclass, 'public.profile_roles'::regclass)$$);
+
+set role anon;
+select set_config('request.jwt.claims', '{"role":"anon"}', false);
+select t.expect_error('discover: vizitatorul neautentificat este refuzat', $$select * from public.discover_people()$$, array['42501']);
+reset role;
+
+-- B (Investitor, nu vrea să se alăture) apelează: vede A, F, G; nu vede H (fără Creator), I (nu vrea), pe sine.
+set role authenticated;
+select set_config('request.jwt.claims', '{"sub":"22222222-2222-2222-2222-222222222222","role":"authenticated"}', false);
+select t.expect_rows('discover(B): A, F și G (inclusiv profiluri incomplete)', $$select 1 from public.discover_people() where id in ('11111111-1111-1111-1111-111111111111', '66666666-6666-6666-6666-666666666666', '77777777-7777-7777-7777-777777777777')$$, 3);
+select t.expect_rows('discover(B): doar acești trei (exclus: doar Investitor, Creator care nu vrea, propriul profil)', $$select 1 from public.discover_people()$$, 3);
+select t.expect_rows('discover(B): A apare și dacă dezvoltă un proiect', $$select 1 from public.discover_people() where id = '11111111-1111-1111-1111-111111111111' and wants_to_develop$$, 1);
+select t.expect_rows('discover(B): ordine stabilă (cele mai noi profiluri întâi)', $$select 1 from (select id, row_number() over () as n from public.discover_people()) q where (n = 1 and id = '66666666-6666-6666-6666-666666666666') or (n = 2 and id = '77777777-7777-7777-7777-777777777777') or (n = 3 and id = '11111111-1111-1111-1111-111111111111')$$, 3);
+-- Filtre
+select t.expect_rows('filtru competență: „market” găsește „Marketing” (fără diferență de majuscule)', $$select 1 from public.discover_people(p_skill => 'market') where id = '11111111-1111-1111-1111-111111111111'$$, 1);
+select t.expect_rows('filtru competență: „market” nu găsește alte profiluri', $$select 1 from public.discover_people(p_skill => 'MARKET')$$, 1);
+select t.expect_rows('filtru competență: diacritice, majuscule („ANALIZĂ”)', $$select 1 from public.discover_people(p_skill => 'ANALIZĂ')$$, 1);
+select t.expect_rows('filtru competență: diacritice, minuscule („analiză”)', $$select 1 from public.discover_people(p_skill => 'analiză')$$, 1);
+select t.expect_rows('filtru competență: fără diacritice („analiza” găsește „Analiză”)', $$select 1 from public.discover_people(p_skill => 'analiza de date')$$, 1);
+select t.expect_rows('filtru competență: „%” este tratat ca text, nu ca „orice”', $$select 1 from public.discover_people(p_skill => '%')$$, 0);
+select t.expect_rows('filtru competență: spațiile goale = fără filtru', $$select 1 from public.discover_people(p_skill => '   ')$$, 3);
+select t.expect_rows('filtru rol: membru_echipa → F', $$select 1 from public.discover_people(p_role => 'membru_echipa') where id = '66666666-6666-6666-6666-666666666666'$$, 1);
+select t.expect_rows('filtru rol: cofondator → doar A', $$select 1 from public.discover_people(p_role => 'cofondator')$$, 1);
+select t.expect_rows('filtru rol necunoscut → niciun rezultat (fără eroare)', $$select 1 from public.discover_people(p_role => 'admin')$$, 0);
+select t.expect_rows('filtru ore: minimum 5 → doar A (10 ore); orele necompletate nu sunt tratate ca 0', $$select 1 from public.discover_people(p_min_hours => 5)$$, 1);
+select t.expect_rows('filtru ore: minimum 11 → nimeni (A are 10)', $$select 1 from public.discover_people(p_min_hours => 11)$$, 0);
+select t.expect_rows('filtru ore + „include necompletate” → A, F, G', $$select 1 from public.discover_people(p_min_hours => 5, p_include_unknown_hours => true)$$, 3);
+select t.expect_rows('filtre combinate: competență + rol + ore', $$select 1 from public.discover_people(p_skill => 'marketing', p_role => 'team_leader', p_min_hours => 10)$$, 1);
+-- Paginare
+select t.expect_rows('paginare: limita 2 → 2 rezultate', $$select 1 from public.discover_people(p_limit => 2)$$, 2);
+select t.expect_rows('paginare: pagina următoare după cursor → restul, fără dubluri', $$select 1 from public.discover_people(p_limit => 2, p_after_created_at => (select created_at from public.profiles where id = '77777777-7777-7777-7777-777777777777'), p_after_id => '77777777-7777-7777-7777-777777777777') where id = '11111111-1111-1111-1111-111111111111'$$, 1);
+select t.expect_rows('paginare: limita este plafonată (cerere 1000 → max. 50)', $$select 1 from public.discover_people(p_limit => 1000)$$, 3);
+select t.expect_rows('paginare: limita minimă este 1', $$select 1 from public.discover_people(p_limit => 0)$$, 1);
+reset role;
+
+-- A apelează: nu se vede pe sine; vede F și G.
+set role authenticated;
+select set_config('request.jwt.claims', '{"sub":"11111111-1111-1111-1111-111111111111","role":"authenticated"}', false);
+select t.expect_rows('discover(A): propriul profil este exclus', $$select 1 from public.discover_people() where id = '11111111-1111-1111-1111-111111111111'$$, 0);
+select t.expect_rows('discover(A): vede F și G', $$select 1 from public.discover_people()$$, 2);
+select t.expect_true('discover(A): funcția este doar de citire (STABLE, limbaj SQL)', $$select provolatile = 's' and prolang = (select oid from pg_language where lanname = 'sql') from pg_proc where proname = 'discover_people'$$);
+select t.expect_affected('discover(A): datele lui F rămân protejate la modificare (0 rânduri)', $$update public.profiles set bio = 'x' where id = '66666666-6666-6666-6666-666666666666'$$, 0);
+reset role;
+
+-- ---------------------------------------------------------------------------
 -- Rezultat
 -- ---------------------------------------------------------------------------
 \o

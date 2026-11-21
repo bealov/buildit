@@ -8,6 +8,7 @@ import {loadErrorInfo,passwordProblem,nameProblem,linkProblem,parseBudget,profil
 import {resolveMode,readStoredMode,writeStoredMode,clearStoredMode,readAppMode,MODE_KEY} from '../src/real/roles.ts';
 import {createAccountApi,profileUpdate,privateUpdate,formFromAccount,emptyForm,avatarPath} from '../src/real/account.ts';
 import {createAuthApi} from '../src/real/auth.ts';
+import {createPeopleApi,rpcArgs,filtersProblem,filtersActive,emptyFilters,PAGE_SIZE} from '../src/real/people.ts';
 import {DESIRED_ROLES,emptyParticipation,hoursLabel,parseHours,participationFromStored,participationToStored,skillProblem,type DesiredRole} from '../src/participation.ts';
 
 const migration=readFileSync(new URL('../supabase/migrations/20261102000000_profiles_and_roles.sql',import.meta.url),'utf8');
@@ -284,4 +285,82 @@ test('participation: limits match the migration',()=>{
  for(const [id] of DESIRED_ROLES)assert.ok(m.includes(`'${id}'`),id);
  assert.ok(!/profile_roles/.test(m.replace(/--.*$/gm,'')),'intențiile nu ating rolurile de cont');
  assert.equal(hoursLabel(1),'1 oră');assert.equal(hoursLabel(10),'10 ore');assert.equal(hoursLabel(20),'20 de ore');
+});
+
+// ---------------------------------------------------------------------------
+// Match · Descoperă oameni
+test('people: filters are sent without turning empty availability into zero',()=>{
+ const none=rpcArgs(emptyFilters(),null,13);
+ assert.deepEqual(none,{p_skill:null,p_role:null,p_min_hours:null,p_include_unknown_hours:false,p_after_created_at:null,p_after_id:null,p_limit:13});
+ assert.equal(rpcArgs({...emptyFilters(),minHours:'   '},null,13).p_min_hours,null,'gol = fără filtru, nu 0');
+ assert.equal(rpcArgs({...emptyFilters(),minHours:'10'},null,13).p_min_hours,10);
+ assert.equal(rpcArgs({...emptyFilters(),includeUnknown:true},null,13).p_include_unknown_hours,false,'bifa contează doar cu un minim de ore');
+ assert.equal(rpcArgs({...emptyFilters(),minHours:'5',includeUnknown:true},null,13).p_include_unknown_hours,true);
+ assert.equal(rpcArgs({...emptyFilters(),role:'admin'},null,13).p_role,null,'rol necunoscut ignorat');
+ assert.equal(rpcArgs({...emptyFilters(),role:'cofondator'},null,13).p_role,'cofondator');
+ assert.equal(rpcArgs({...emptyFilters(),skill:'  Analiză   de date '},null,13).p_skill,'Analiză de date');
+ assert.equal(rpcArgs({...emptyFilters(),skill:'x'.repeat(80)},null,13).p_skill?.length,40);
+ assert.deepEqual(rpcArgs(emptyFilters(),{createdAt:'2026-11-20T10:00:00Z',id:'u9'},13).p_after_id,'u9');
+ assert.equal(filtersProblem({...emptyFilters(),minHours:'0'})!==null,true);
+ assert.equal(filtersProblem({...emptyFilters(),minHours:'abc'})!==null,true);
+ assert.equal(filtersProblem({...emptyFilters(),minHours:'200'})!==null,true);
+ assert.equal(filtersProblem({...emptyFilters(),minHours:''}),null);
+ assert.equal(filtersActive(emptyFilters()),false);
+ assert.equal(filtersActive({...emptyFilters(),includeUnknown:true}),false);
+ assert.equal(filtersActive({...emptyFilters(),role:'cofondator'}),true);
+ assert.match(loadErrorInfo({code:'PGRST202'}).hint,/20261121000000_discover_people/);
+});
+
+function peopleClient(rows:object[],opts:{profile?:object|null}={}){
+ const calls:{name:string;args:unknown}[]=[];
+ const client={
+  rpc:(name:string,args:unknown)=>{calls.push({name,args});return Promise.resolve({data:rows,error:null})},
+  storage:{from:(bucket:string)=>({
+   createSignedUrls:(paths:string[],ttl:number)=>{calls.push({name:'signMany',args:{bucket,paths,ttl}});return Promise.resolve({data:paths.map(p=>({path:p,signedUrl:'https://signed/'+p,error:null})),error:null})},
+   createSignedUrl:(path:string,ttl:number)=>{calls.push({name:'sign',args:{bucket,path,ttl}});return Promise.resolve({data:{signedUrl:'https://signed/'+path},error:null})}
+  })},
+  from:(table:string)=>{const q={select(cols:string){calls.push({name:'select',args:{table,cols}});return q},eq(){return q},
+   maybeSingle(){return Promise.resolve({data:opts.profile===undefined?null:opts.profile,error:null})},
+   then(res:(v:unknown)=>void){res({data:[{role:'creator'},{role:'admin'}],error:null})}};return q}
+ };
+ return {calls,client};
+}
+const row=(id:string,extra:object={})=>({id,display_name:'P '+id,avatar_path:null,bio:'',city:'',skills:['Design'],desired_roles:[],weekly_hours:null,wants_to_develop:false,created_at:'2026-11-'+String(10+id.length).padStart(2,'0')+'T00:00:00Z',...extra});
+
+test('people api: one page, own profile excluded, private bucket signed in one call, cursor for next page',async()=>{
+ const rows=[row('me'),...Array.from({length:PAGE_SIZE+1},(_,i)=>row('u'+i,{avatar_path:i<2?`u${i}/avatar.jpg`:null}))];
+ const {calls,client}=peopleClient(rows);
+ // @ts-expect-error client simulat parțial
+ const page=await createPeopleApi(client).discover('me',{...emptyFilters(),minHours:''},null);
+ assert.equal((calls[0].args as {p_limit:number}).p_limit,PAGE_SIZE+1,'se cere un rezultat în plus pentru „Arată mai multe”');
+ assert.ok(!page.people.some(p=>p.id==='me'),'propriul profil este exclus');
+ assert.equal(page.people.length,PAGE_SIZE);
+ assert.deepEqual(page.next,{createdAt:page.people.at(-1)!.created_at,id:page.people.at(-1)!.id});
+ const sign=calls.filter(c=>c.name==='signMany');assert.equal(sign.length,1,'un singur apel pentru fotografii');
+ assert.deepEqual((sign[0].args as {paths:string[]}).paths,['u0/avatar.jpg','u1/avatar.jpg']);
+ assert.equal(page.people[0].avatarUrl,'https://signed/u0/avatar.jpg');
+ assert.ok(!calls.some(c=>c.name==='select'),'lista nu citește direct tabelele');
+});
+
+test('people api: last page has no cursor; foreign photo paths are ignored; card has no private fields',async()=>{
+ const {client}=peopleClient([row('a',{avatar_path:'b/avatar.jpg',email:'x@y.ro'})]);
+ // @ts-expect-error client simulat parțial
+ const page=await createPeopleApi(client).discover('me',emptyFilters(),null);
+ assert.equal(page.next,null);
+ assert.equal(page.people[0].avatar_path,null,'doar fotografia din folderul propriu al persoanei');
+ assert.ok(!('email' in page.people[0]),'câmpurile neașteptate nu ajung în card');
+});
+
+test('people api: public profile detail reads only public columns and known roles',async()=>{
+ const {calls,client}=peopleClient([],{profile:{id:'a',display_name:'Ana',avatar_path:'a/avatar.jpg',bio:'',city:'',company:'',industries:'',objectives:'',wants_to_develop:true,wants_to_join:true,skills:['X',7],desired_roles:['cofondator'],weekly_hours:null}});
+ // @ts-expect-error client simulat parțial
+ const p=await createPeopleApi(client).person('a');
+ const cols=(calls.find(c=>c.name==='select'&&(c.args as {table:string}).table==='profiles')!.args as {cols:string}).cols;
+ assert.ok(!/email|link|show_|budget|investor_/.test(cols),'fără coloane private');
+ assert.ok(!cols.includes('*'));
+ assert.deepEqual(p?.roles,['creator']);assert.deepEqual(p?.skills,['X']);
+ assert.equal(p?.avatarUrl,'https://signed/a/avatar.jpg');
+ const {client:empty}=peopleClient([],{profile:null});
+ // @ts-expect-error client simulat parțial
+ assert.equal(await createPeopleApi(empty).person('nimeni'),null);
 });

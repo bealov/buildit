@@ -142,6 +142,51 @@ async function run(){
   await check(`${me.label}: NU își poate seta fotografia celuilalt cont`,async()=>{if(!(await me.c.from('profiles').update({avatar_path:photoPath(you.id)}).eq('id',me.id)).error)fail('operațiunea a fost PERMISĂ')});
  }
 
+ // 2b. Match · Descoperă oameni — DOAR CITIRE (nu modifică profiluri, roluri sau fotografii)
+ const PUBLIC_KEYS=['id','display_name','avatar_path','bio','city','skills','desired_roles','weekly_hours','wants_to_develop','created_at'];
+ const discoverable=u=>!!initial[u.label].profile.wants_to_join&&initial[u.label].roles.includes('creator');
+ const ids=r=>(r.data??[]).map(x=>x.id);
+ await check('vizitator: nu poate apela discover_people',async()=>{if(!(await anon.rpc('discover_people',{})).error)fail('operațiunea a fost PERMISĂ')});
+ for(const me of [A,B]){
+  const you=other(me),yi=initial[you.label].profile,tag=`${me.label}→${you.label}`;let rows=null;
+  const call=args=>me.c.rpc('discover_people',{p_limit:50,...args});
+  await check(`${me.label}: discover_people răspunde (migrarea 20261121000000 este aplicată)`,async()=>{const r=await call({});if(r.error)fail(codeOf(r.error)==='PGRST202'?'funcția lipsește: aplică migrarea 20261121000000_discover_people.sql':'eroare (cod '+codeOf(r.error)+')');rows=r.data??[]});
+  await check(`${me.label}: Descoperă oameni nu include propriul profil`,async()=>{if(!rows)fail('lista nu a fost încărcată');if(rows.some(r=>r.id===me.id))fail('propriul profil apare în listă')});
+  await check(`${me.label}: rezultatele conțin doar câmpuri publice`,async()=>{if(!rows)fail('lista nu a fost încărcată');if(rows.some(r=>Object.keys(r).some(k=>!PUBLIC_KEYS.includes(k))))fail('un rezultat conține un câmp neașteptat')});
+  await check(`${me.label}: rezultatele sunt doar Creatori care vor să se alăture`,async()=>{
+   if(!rows)fail('lista nu a fost încărcată');if(!rows.length)return 'omis';
+   const list=rows.map(r=>r.id);
+   const p=await me.c.from('profiles').select('id,wants_to_join').in('id',list);const ro=await me.c.from('profile_roles').select('user_id').in('user_id',list).eq('role','creator');
+   if(p.error||ro.error)fail('verificarea nu a putut citi profilurile');
+   if(p.data.some(x=>!x.wants_to_join))fail('apare cineva care nu vrea să se alăture');
+   if(list.some(id=>!ro.data.some(x=>x.user_id===id)))fail('apare cineva fără rolul Creator');
+  });
+  await check(`${me.label}: maximum 50 de rezultate pe pagină`,async()=>{const r=await me.c.rpc('discover_people',{p_limit:1000});if(r.error)fail('cod '+codeOf(r.error));if(r.data.length>50)fail('peste 50')});
+  await check(`${me.label}: paginarea nu repetă persoane`,async()=>{
+   const a=await call({p_limit:1});if(a.error)fail('cod '+codeOf(a.error));if(!a.data.length)return 'omis';
+   const b=await call({p_limit:50,p_after_created_at:a.data[0].created_at,p_after_id:a.data[0].id});if(b.error)fail('cod '+codeOf(b.error));
+   if(ids(b).includes(a.data[0].id))fail('aceeași persoană apare pe două pagini');
+  });
+  await check(`${tag}: ${you.label} apare doar dacă are rolul Creator și „Vreau să mă alătur”`,async()=>{if(!rows)fail('lista nu a fost încărcată');const seen=rows.some(r=>r.id===you.id);if(!seen&&rows.length>=50)return 'omis';if(seen!==discoverable(you))fail(seen?'apare deși nu ar trebui':'nu apare deși ar trebui')});
+  await check(`${tag}: filtrul de competență găsește ${you.label} (fără diferență de majuscule)`,async()=>{if(!discoverable(you)||!yi.skills?.length)return 'omis';const r=await call({p_skill:yi.skills[0].toLocaleUpperCase('ro')});if(r.error||!ids(r).includes(you.id))fail('nu a fost găsit')});
+  await check(`${tag}: filtrul de rol dorit`,async()=>{
+   if(!discoverable(you)||!yi.desired_roles?.length)return 'omis';
+   const yes=await call({p_role:yi.desired_roles[0]});if(yes.error||!ids(yes).includes(you.id))fail('nu a fost găsit cu rolul propriu');
+   const otherRole=['cofondator','membru_echipa','manager_proiect','team_leader'].find(x=>!yi.desired_roles.includes(x));
+   if(otherRole){const no=await call({p_role:otherRole});if(no.error||ids(no).includes(you.id))fail('apare la un rol pe care nu l-a ales')}
+  });
+  await check(`${tag}: filtrul de ore (necompletat ≠ 0)`,async()=>{
+   if(!discoverable(you))return 'omis';const h=yi.weekly_hours;
+   if(h==null){
+    const no=await call({p_min_hours:1});if(no.error||ids(no).includes(you.id))fail('profilul fără ore apare la un minim de ore');
+    const yes=await call({p_min_hours:1,p_include_unknown_hours:true});if(yes.error||!ids(yes).includes(you.id))fail('nu apare deși s-au inclus orele necompletate');
+   }else{
+    const yes=await call({p_min_hours:h});if(yes.error||!ids(yes).includes(you.id))fail('nu apare la minimul egal cu orele sale');
+    if(h<168){const no=await call({p_min_hours:h+1});if(no.error||ids(no).includes(you.id))fail('apare peste orele declarate')}
+   }
+  });
+ }
+
  // 3. Roluri nepermise și operațiile proprietarului
  for(const me of [A,B]){
   const init=initial[me.label];
@@ -196,5 +241,5 @@ finally{
 for(const r of results)console.log(`${r.status.padEnd(4)} ${r.name}${r.why?' — '+r.why:''}`);
 for(const u of ['A','B'])if(restored[u].length)console.log(`Atenție: pentru contul ${u} a fost necesară restaurarea (${restored[u].join(', ')}).`);
 const failed=results.filter(r=>r.status==='FAIL').length,skipped=results.filter(r=>r.status==='omis').length;
-console.log(`\nRezultat pe buildit-dev: ${results.length-failed-skipped} trecute, ${failed} eșuate, ${skipped} omise (cont fără fotografie).`);
+console.log(`\nRezultat pe buildit-dev: ${results.length-failed-skipped} trecute, ${failed} eșuate, ${skipped} omise (date insuficiente pentru acea verificare, de ex. cont fără fotografie sau fără competențe).`);
 process.exit(failed?1:0);
