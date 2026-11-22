@@ -49,3 +49,6 @@ jobs:
           BUILDIT_TEST_A_PASSWORD: ${{ secrets.BUILDIT_TEST_A_PASSWORD }}
           BUILDIT_TEST_B_EMAIL: ${{ secrets.BUILDIT_TEST_B_EMAIL }}
           BUILDIT_TEST_B_PASSWORD: ${{ secrets.BUILDIT_TEST_B_PASSWORD }}
+          # Opțional: cont exclusiv Investitor (refuzul creării de proiecte). Fără aceste secrete, verificările lui C sunt omise.
+          BUILDIT_TEST_C_EMAIL: ${{ secrets.BUILDIT_TEST_C_EMAIL }}
+          BUILDIT_TEST_C_PASSWORD: ${{ secrets.BUILDIT_TEST_C_PASSWORD }}

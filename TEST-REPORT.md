@@ -220,4 +220,28 @@ Verificări pentru proiecte trecute (18), cu o ciornă temporară a contului A c
 - Investiția căutată de 5.000 EUR este vizibilă pentru „Maria”.
 - Editarea simultană laptop/telefon afișează conflictul și păstrează modificările nesalvate în formular; „Încarcă versiunea salvată” aduce corect titlul salvat pe laptop.
 
-**Netestate manual** (acoperite doar de testele locale sau simulate): suprascrierea explicită prin „Salvează modificările mele”; editarea unui proiect publicat cu confirmarea „Actualizează proiectul publicat” (versiunea veche vizibilă până la confirmare) și „Renunță”; mesajul pentru publicarea incompletă în formular; varianta „Remote / Online”; „Investiție de stabilit” (fără sumă); proiectul fără căutare de investiție (suma nu apare public) și păstrarea sumei după debifarea investiției; afișarea pentru proprietar a valorilor 0 / „Nu am estimat încă” / „Necompletat”; ștergerea definitivă a unei ciorne; „Vezi profilul” proprietarului din pagina proiectului; limita de 20 de proiecte; contul exclusiv Investitor (creare refuzată; „Proiecte” neschimbat în Mod Investitor).
+**Netestate manual la 22 noiembrie (prima sesiune):** vezi actualizarea de mai jos.
+
+#### Manual pe Vercel Preview · actualizare 22 noiembrie 2026 (raportat de utilizator)
+
+- Modificările nesalvate ale unui proiect publicat nu apar pentru „Maria”; după confirmarea „Actualizează proiectul publicat” apar.
+- „Renunță” păstrează versiunea salvată.
+- Debifarea „Investiție” la „Ce caută proiectul” ascunde suma pentru ceilalți; rebifarea readuce cei 5.000 EUR.
+- „Nu am estimat încă” la investiția căutată afișează „Investiție de stabilit”.
+- Ștergerea unei ciorne cere confirmare, iar ștergerea persistă după F5.
+- Publicarea incompletă este blocată, cu lista câmpurilor lipsă; proiectul rămâne ciornă.
+- După conflictul laptop/telefon, „Salvează modificările mele” suprascrie explicit versiunea salvată; noua versiune apare după reîncărcare pe celălalt dispozitiv.
+
+**Încă netestate manual** (acoperite doar de testele locale sau simulate): varianta „Remote / Online” fără oraș; afișarea pentru proprietar a valorilor 0 / „Nu am estimat încă” / „Necompletat” la celelalte câmpuri financiare; „Vezi profilul” proprietarului din pagina proiectului; limita de 20 de proiecte; contul exclusiv Investitor (creare refuzată; „Proiecte” neschimbat în Mod Investitor).
+
+#### Pregătit, încă nerulat pe buildit-dev · cont C exclusiv Investitor
+
+Verificări noi în `tests/rls-remote.mjs` (GitHub Actions), care rulează doar dacă există secretele `BUILDIT_TEST_C_EMAIL` și `BUILDIT_TEST_C_PASSWORD` (altfel apar ca „omis”):
+- contul C este configurat, diferit de A și B, are profil și **doar** rolul Investitor (dacă are rolul Creator, verificarea eșuează cu explicație și testele de creare nu rulează);
+- C **nu poate crea** un proiect prin `save_project` (refuz așteptat cu codul `42501`) și nici prin inserare directă în `projects`;
+- numărul proiectelor lui C rămâne neschimbat; rolurile lui C rămân neschimbate;
+- C nu vede ciorna temporară a lui A și nici datele ei private.
+
+Dacă o creare reușește neașteptat, verificarea este raportată ca eșuată, iar scriptul șterge **doar** proiectul creat în acea rulare (după ID, ca proprietar C); dacă ștergerea nu reușește, ID-urile rămase sunt afișate. Conturile A/B și proiectele existente nu sunt modificate de aceste verificări.
+
+Verificat doar pe un server **simulat** (nu pe buildit-dev): fără secretele C → 6 verificări „omis”; cu C exclusiv Investitor → toate verificările C trec; cu o regulă intenționat greșită care permite crearea → eșecurile sunt raportate, proiectele temporare sunt șterse, iar starea finală este identică cu cea inițială. Simularea a găsit și o eroare în script (o variabilă indisponibilă la curățenia finală), corectată înainte de livrare.

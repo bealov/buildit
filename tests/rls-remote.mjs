@@ -60,6 +60,23 @@ async function signIn(label){
  return {label,c,id:data.user.id};
 }
 const A=await signIn('A'),B=await signIn('B'),anon=client();
+// Contul C (opțional): EXCLUSIV Investitor, folosit doar pentru refuzul creării de proiecte.
+// Fără secretele BUILDIT_TEST_C_*, verificările lui C apar ca „omis”. Contul C nu este modificat.
+const hasC=!!(env.BUILDIT_TEST_C_EMAIL&&env.BUILDIT_TEST_C_PASSWORD);
+let C=null,cProblem=null;
+if(hasC){
+ const c=client();
+ const {data,error}=await c.auth.signInWithPassword({email:env.BUILDIT_TEST_C_EMAIL,password:env.BUILDIT_TEST_C_PASSWORD});
+ if(error)cProblem=`autentificarea contului C a eșuat (cod ${error.code||error.status})`;
+ else if(data.user.id===A.id||data.user.id===B.id)cProblem='contul C trebuie să fie diferit de conturile A și B';
+ else C={label:'C',c,id:data.user.id};
+}
+const cTemp=new Set(); // proiecte create NEAȘTEPTAT de C în această rulare (doar acestea se șterg)
+async function cleanupC(ids){
+ const left=[];
+ for(const id of ids){const r=await C.c.from('projects').delete().eq('id',id).eq('owner_id',C.id).select('id');if(r.error||r.data?.length!==1)left.push(id);else cTemp.delete(id)}
+ return left.length?`curățarea NU a reușit pentru ${left.length} proiect(e) temporar(e); șterge-le manual (ID-urile sunt afișate mai jos)`:'proiectul temporar a fost șters';
+}
 if(A.id===B.id){console.error('A și B trebuie să fie conturi diferite.');process.exit(2)}
 {const probe=await A.c.from('profiles').select(PARTICIPATION_COLS.join(',')).limit(1);if(probe.error){console.error(`Coloanele de participare lipsesc (cod ${codeOf(probe.error)}). Aplică întâi migrarea 20261115000000_creator_participation.sql pe buildit-dev. Nu am rulat niciun test.`);process.exit(2)}}
 
@@ -196,6 +213,37 @@ async function run(){
   const r=await B.c.rpc('save_project',{p_id:null,p_expected_updated_at:null,p_status:'draft',p_public:{title:'Test B'},p_private:{}});
   if(!r.error){const id=r.data?.[0]?.id;if(id)await B.c.from('projects').delete().eq('id',id);fail('operațiunea a fost PERMISĂ (ciorna a fost ștearsă)')}
  });
+ // 2d. Contul C — exclusiv Investitor: crearea de proiecte trebuie refuzată de API / baza de date.
+ cRoles=null;let cCountBefore=null,cOk=false;
+ await check('C: contul de test exclusiv Investitor este configurat',async()=>{if(!hasC)return 'omis';if(cProblem)fail(cProblem)});
+ await check('C: are profil și doar rolul Investitor',async()=>{
+  if(!C)return 'omis';
+  const prof=await C.c.from('profiles').select('id').eq('id',C.id).maybeSingle();
+  if(prof.error||!prof.data)fail('contul C nu are profil; intră o dată în aplicație cu el și completează profilul, alegând rolul Investitor');
+  const ro=await C.c.from('profile_roles').select('role').eq('user_id',C.id);if(ro.error)fail('rolurile nu au putut fi citite');
+  cRoles=ro.data.map(x=>x.role).sort();
+  if(cRoles.includes('creator'))fail('contul C are rolul Creator; pentru această verificare este nevoie de un cont exclusiv Investitor');
+  if(!cRoles.includes('investor'))fail('contul C nu are rolul Investitor');
+  const n=await C.c.from('projects').select('id',{count:'exact',head:true}).eq('owner_id',C.id);if(n.error)fail('cod '+codeOf(n.error));
+  cCountBefore=n.count;cOk=true;
+ });
+ await check('C (Investitor): NU poate crea un proiect prin save_project',async()=>{
+  if(!cOk)return 'omis';
+  const r=await C.c.rpc('save_project',{p_id:null,p_expected_updated_at:null,p_status:'draft',p_public:{title:'Test automat C — se șterge'},p_private:{}});
+  if(!r.error){const id=r.data?.[0]?.id;if(id){cTemp.add(id);fail('crearea a fost PERMISĂ; '+await cleanupC([id]))}fail('crearea a fost PERMISĂ (fără ID returnat)')}
+  if(codeOf(r.error)!=='42501')fail('refuzată, dar cu alt cod decât cel așteptat (cod '+codeOf(r.error)+')');
+ });
+ await check('C (Investitor): NU poate crea un proiect prin inserare directă',async()=>{
+  if(!cOk)return 'omis';
+  const r=await C.c.from('projects').insert({title:'Test automat C — se șterge'}).select('id');
+  if(!r.error){const ids=(r.data??[]).map(x=>x.id);ids.forEach(id=>cTemp.add(id));fail('crearea a fost PERMISĂ; '+(ids.length?await cleanupC(ids):'fără ID returnat'))}
+ });
+ await check('C (Investitor): numărul proiectelor lui C a rămas neschimbat',async()=>{
+  if(!cOk)return 'omis';
+  const n=await C.c.from('projects').select('id',{count:'exact',head:true}).eq('owner_id',C.id);if(n.error)fail('cod '+codeOf(n.error));
+  if(n.count!==cCountBefore)fail(`numărul s-a schimbat (${cCountBefore} → ${n.count})`);
+ });
+
  const before=await A.c.from('projects').select('id',{count:'exact',head:true}).eq('owner_id',A.id);
  projectCountBefore=before.count;
  const canCreate=initial.A.roles.includes('creator')&&!before.error&&(before.count??0)<20;
@@ -212,6 +260,11 @@ async function run(){
  });
  await P('B NU vede ciorna lui A',async()=>{const r=await B.c.from('projects').select('id').eq('id',pid);if(r.error)return;if(r.data.length)fail('ciorna este vizibilă')});
  await P('B NU vede datele private (finanțe, linkuri)',async()=>{const r=await B.c.from('project_private').select('project_id').eq('project_id',pid);if(r.error)return;if(r.data.length)fail('datele private sunt vizibile')});
+ await P('C (Investitor) NU vede ciorna și datele private ale lui A',async()=>{
+  if(!C)return 'omis';
+  const a=await C.c.from('projects').select('id').eq('id',pid);if(!a.error&&a.data.length)fail('ciorna este vizibilă');
+  const b=await C.c.from('project_private').select('project_id').eq('project_id',pid);if(!b.error&&b.data.length)fail('datele private sunt vizibile');
+ });
  await P('B NU poate salva peste proiectul lui A',async()=>{if(!(await B.c.rpc('save_project',{p_id:pid,p_expected_updated_at:pts,p_status:'draft',p_public:{title:'furat'},p_private:{}})).error)fail('operațiunea a fost PERMISĂ')});
  await P('B NU poate schimba starea proiectului lui A',async()=>{if(!(await B.c.rpc('set_project_status',{p_id:pid,p_expected_updated_at:pts,p_status:'published'})).error)fail('operațiunea a fost PERMISĂ')});
  await P('B NU poate modifica sau șterge proiectul lui A',async()=>{mustBeDenied(await B.c.from('projects').update({title:'furat'}).eq('id',pid).select('id'));mustBeDenied(await B.c.from('projects').delete().eq('id',pid).select('id'))});
@@ -275,7 +328,7 @@ async function run(){
 }
 
 let restored={A:[],B:[]};
-var tempProject={id:null},projectCountBefore=null;
+var tempProject={id:null},projectCountBefore=null,cRoles=null;
 try{await run()}
 finally{
  // Curățenie: doar ciorna temporară creată în această rulare (după ID).
@@ -284,7 +337,12 @@ finally{
  for(const u of [A,B])restored[u.label]=await restore(u).catch(()=>['restaurarea a eșuat']);
  for(const u of [A,B])await check(`${u.label}: profilul, datele private, rolurile și fotografia au rămas neschimbate`,async()=>{if(!(await unchanged(u)))fail('starea finală diferă de cea inițială')});
  // scope local: închide doar sesiunile acestui script, nu și pe cele din browser sau telefon
- await Promise.all([A.c.auth.signOut({scope:'local'}),B.c.auth.signOut({scope:'local'})]);
+ if(C){
+  // Curățenie de siguranță: doar proiectele create neașteptat de C în această rulare.
+  if(cTemp.size){const ids=[...cTemp];const msg=await cleanupC(ids);console.log(`Atenție: contul C a putut crea ${ids.length} proiect(e) temporar(e); ${msg}.${cTemp.size?' ID-uri rămase: '+[...cTemp].join(', '):''}`)}
+  if(cRoles)await check('C: rolurile contului C au rămas neschimbate',async()=>{const ro=await C.c.from('profile_roles').select('role').eq('user_id',C.id);if(!same(ro.data?.map(x=>x.role).sort(),cRoles))fail('rolurile diferă')});
+ }
+ await Promise.all([A.c.auth.signOut({scope:'local'}),B.c.auth.signOut({scope:'local'}),C?.c.auth.signOut({scope:'local'})]);
 }
 
 for(const r of results)console.log(`${r.status.padEnd(4)} ${r.name}${r.why?' — '+r.why:''}`);

@@ -58,3 +58,21 @@ Cont A (Creator, Mod Creator):
 10. Verifică pe telefon și pe laptop. Opțional: contul doar Investitor vede „Proiecte” neschimbat (în pregătire).
 
 Limita de 20 este verificată automat (local); manual ar necesita 20 de proiecte.
+
+## Opțional · Cont de test C, exclusiv Investitor
+
+Pentru verificarea automată a refuzului de creare a proiectelor de către un cont fără rolul Creator.
+Contul C este un cont de test separat (nu un cont al unei persoane reale) și nu trebuie să primească
+niciodată rolul Creator. Activarea unui rol este permanentă.
+
+1. Supabase → **buildit-dev** → **Authentication** → **Users** → **Add user** → **Create new user**:
+   o adresă de email pe care o controlezi, o parolă de cel puțin 10 caractere, bifează
+   **Auto Confirm User**.
+2. Pe Vercel Preview: **Demo** → **Cont real · mediu de test** → autentifică-te cu contul C →
+   „Completează profilul”: un nume (ex. „Cont test Investitor”) și rolul **Investitor**. Nu activa
+   rolul Creator. Ieși din cont.
+3. GitHub → repository → **Settings** → **Environments** → **buildit-dev** → **Add environment secret**:
+   - `BUILDIT_TEST_C_EMAIL` — emailul contului C;
+   - `BUILDIT_TEST_C_PASSWORD` — parola contului C.
+4. Pe PR #2: scoate și pune la loc eticheta `verifica-buildit-dev`. În rezultat caută rândurile care
+   încep cu „C:” și „C (Investitor)”.
