@@ -232,9 +232,9 @@ Verificări pentru proiecte trecute (18), cu o ciornă temporară a contului A c
 - Publicarea incompletă este blocată, cu lista câmpurilor lipsă; proiectul rămâne ciornă.
 - După conflictul laptop/telefon, „Salvează modificările mele” suprascrie explicit versiunea salvată; noua versiune apare după reîncărcare pe celălalt dispozitiv.
 
-**Încă netestate manual** (acoperite doar de testele locale sau simulate): varianta „Remote / Online” fără oraș; afișarea pentru proprietar a valorilor 0 / „Nu am estimat încă” / „Necompletat” la celelalte câmpuri financiare; „Vezi profilul” proprietarului din pagina proiectului; limita de 20 de proiecte; contul exclusiv Investitor (creare refuzată; „Proiecte” neschimbat în Mod Investitor).
+**Încă netestate manual** (acoperite doar de testele locale sau simulate): varianta „Remote / Online” fără oraș; afișarea pentru proprietar a valorilor 0 / „Nu am estimat încă” / „Necompletat” la celelalte câmpuri financiare; „Vezi profilul” proprietarului din pagina proiectului; limita de 20 de proiecte; afișarea „Proiecte” în Mod Investitor (neschimbată) cu un cont exclusiv Investitor. Refuzul creării de proiecte pentru contul exclusiv Investitor a fost verificat automat pe buildit-dev (rularea #6, mai jos).
 
-#### Pregătit, încă nerulat pe buildit-dev · cont C exclusiv Investitor
+#### Cont C exclusiv Investitor · pregătit (rulat ulterior, vezi mai jos)
 
 Verificări noi în `tests/rls-remote.mjs` (GitHub Actions), care rulează doar dacă există secretele `BUILDIT_TEST_C_EMAIL` și `BUILDIT_TEST_C_PASSWORD` (altfel apar ca „omis”):
 - contul C este configurat, diferit de A și B, are profil și **doar** rolul Investitor (dacă are rolul Creator, verificarea eșuează cu explicație și testele de creare nu rulează);
@@ -245,3 +245,22 @@ Verificări noi în `tests/rls-remote.mjs` (GitHub Actions), care rulează doar 
 Dacă o creare reușește neașteptat, verificarea este raportată ca eșuată, iar scriptul șterge **doar** proiectul creat în acea rulare (după ID, ca proprietar C); dacă ștergerea nu reușește, ID-urile rămase sunt afișate. Conturile A/B și proiectele existente nu sunt modificate de aceste verificări.
 
 Verificat doar pe un server **simulat** (nu pe buildit-dev): fără secretele C → 6 verificări „omis”; cu C exclusiv Investitor → toate verificările C trec; cu o regulă intenționat greșită care permite crearea → eșecurile sunt raportate, proiectele temporare sunt șterse, iar starea finală este identică cu cea inițială. Simularea a găsit și o eroare în script (o variabilă indisponibilă la curățenia finală), corectată înainte de livrare.
+
+#### Automat pe buildit-dev · rularea #6 — cont exclusiv Investitor (FINALIZAT)
+
+„Permisiuni buildit-dev”, [rularea #6 (45052244156)](https://github.com/bealov/buildit/actions/runs/45052244156), **commit testat `b30a68d`**, 22 noiembrie 2026 — **107 trecute, 0 eșuate, 1 omisă**, cu conturile A, B și contul C exclusiv Investitor (secretele `BUILDIT_TEST_C_*`).
+
+Verificările contului C, toate trecute:
+- contul de test exclusiv Investitor este configurat;
+- C are profil și doar rolul Investitor;
+- C **nu poate crea** un proiect prin `save_project`;
+- C **nu poate crea** un proiect prin inserare directă;
+- numărul proiectelor lui C a rămas neschimbat;
+- C nu vede ciorna temporară a lui A și nici datele ei private;
+- rolurile lui C au rămas neschimbate.
+
+Restul verificărilor (profiluri, roluri, fotografii, „Descoperă oameni”, proiecte cu ciorna temporară a lui A creată și ștearsă după ID, numărul proiectelor existente ale lui A neschimbat, profilurile și fotografiile lui A și B neschimbate) au trecut. Nu au fost necesare restaurări, iar jurnalul nu conține avertismente.
+
+**Omisă:** „B: nu poate crea proiecte dacă nu are rolul Creator” — contul B are rolul Creator. Restricția este acum verificată prin contul C.
+
+**Verificarea contului exclusiv Investitor la nivel de API / bază de date (refuzul creării de proiecte): finalizată.** Afișarea interfeței în Mod Investitor pentru un cont exclusiv Investitor nu a fost raportată manual.
