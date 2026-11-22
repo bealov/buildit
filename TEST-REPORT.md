@@ -264,3 +264,9 @@ Restul verificărilor (profiluri, roluri, fotografii, „Descoperă oameni”, p
 **Omisă:** „B: nu poate crea proiecte dacă nu are rolul Creator” — contul B are rolul Creator. Restricția este acum verificată prin contul C.
 
 **Verificarea contului exclusiv Investitor la nivel de API / bază de date (refuzul creării de proiecte): finalizată.** Afișarea interfeței în Mod Investitor pentru un cont exclusiv Investitor nu a fost raportată manual.
+
+#### Manual pe Vercel Preview · cont C exclusiv Investitor (raportat de utilizator)
+
+- În contul C (doar rolul Investitor), secțiunea „Proiecte” nu apare în meniul de jos.
+
+Notă din cod (nu din verificarea manuală): în modul Investitor, poziția respectivă din meniu este „Explore”, care deocamdată afișează mesajul „Explorarea proiectelor reale este în pregătire”. Cu aceasta, verificarea contului exclusiv Investitor este completă atât la nivel de API / bază de date (rularea #6), cât și în interfață.
