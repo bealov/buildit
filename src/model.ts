@@ -1,5 +1,6 @@
 import type {ReviewDraft} from './reviewRules';
 import type {CreatorRequest} from './creatorMatching';
+import type {StoredParticipation} from './participation';
 export type Role='creator'|'investor';
 export interface FileRef {id:string;name:string;size:number;type:string}
 export type FinancialKey='revenue'|'fixed'|'variable'|'initial'|'capital'|'growth'|'price'|'unitCost';
@@ -8,7 +9,8 @@ export interface Request {id:string;project:string;investor:string;status:'pendi
 export interface Listing {file?:FileRef;id:string;project?:string;owner?:string;industry?:string;title:string;description:string;price:number;published:boolean;document:string}
 export interface Purchase {id:string;listing:string;buyer:string;status:'initiated'|'awaiting'|'completed'|'cancelled'|'failed';price:number;date:number}
 export interface Campaign {id:string;project:string;name:string;price:number;start:number;end:number}
-export interface Profile {photo?:string;name:string;bio:string;city:string;company:string;email:string;link:string;showEmail:boolean;showLink:boolean;industries:string;min:number;max:number;stage:string;objectives:string}
+export interface Profile {/** Cum vrea Creatorul să participe; lipsește în datele salvate înainte de această versiune. */
+ participation?:StoredParticipation;photo?:string;name:string;bio:string;city:string;company:string;email:string;link:string;showEmail:boolean;showLink:boolean;industries:string;min:number;max:number;stage:string;objectives:string}
 export interface State {activeCreator?:string;creatorProfiles?:Record<string,Profile>;planReviews?:Record<string,ReviewDraft>;version:number;creatorRequests?:CreatorRequest[];role:Role|null;projects:Project[];requests:Request[];saved:string[];dismissed:string[];viewed:string[];listings:Listing[];purchases:Purchase[];campaigns:Campaign[];profiles:Record<Role,Profile>;analyses:Record<string,ReturnType<typeof analyze>>;notifications:string[]}
 export const industries=['IT & Tech','Tehnologie verde','HoReCa','Educație','Beauty','Agricultură','Producție','Sănătate','Retail','Inginerie','Servicii'];
 export const stages=['Idee','Validare','MVP','Creștere'];
@@ -37,7 +39,7 @@ return {version:1,role:null,projects,requests:[],saved:[],dismissed:[],viewed:[]
 
 export const currentCreator=(s:State)=>s.activeCreator||'creator';
 export const ownsProject=(s:State,p:Project|undefined)=>s.role==='creator'&&!!p&&p.owner===currentCreator(s);
-export function profileFor(s:State,owner:string):Profile {if(owner==='creator')return s.profiles.creator;const p=s.projects.find(p=>p.owner===owner);return s.creatorProfiles?.[owner]||{...s.profiles.creator,photo:undefined,name:'Creator '+(p?.name||owner),company:p?.name||'',bio:p?.description||'',city:p?.city||'',email:owner+'@example.com',link:'',showEmail:true,showLink:false}}
+export function profileFor(s:State,owner:string):Profile {if(owner==='creator')return s.profiles.creator;const p=s.projects.find(p=>p.owner===owner);return s.creatorProfiles?.[owner]||{...s.profiles.creator,photo:undefined,participation:undefined,name:'Creator '+(p?.name||owner),company:p?.name||'',bio:p?.description||'',city:p?.city||'',email:owner+'@example.com',link:'',showEmail:true,showLink:false}}
 export function switchCreator(s:State,owner:string):State {return owner==='creator'||s.projects.some(p=>p.owner===owner)?{...s,role:'creator',activeCreator:owner}:s}
 export const listingOwner=(s:State,l:Listing|undefined)=>l?.owner||(l?.project?s.projects.find(p=>p.id===l.project)?.owner:undefined);
 export const listingIndustry=(s:State,l:Listing)=>l.industry||(l.project?s.projects.find(p=>p.id===l.project)?.industry:undefined)||'Servicii';
