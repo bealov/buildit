@@ -270,3 +270,33 @@ Restul verificărilor (profiluri, roluri, fotografii, „Descoperă oameni”, p
 - În contul C (doar rolul Investitor), secțiunea „Proiecte” nu apare în meniul de jos.
 
 Notă din cod (nu din verificarea manuală): în modul Investitor, poziția respectivă din meniu este „Explore”, care deocamdată afișează mesajul „Explorarea proiectelor reale este în pregătire”. Cu aceasta, verificarea contului exclusiv Investitor este completă atât la nivel de API / bază de date (rularea #6), cât și în interfață.
+
+## Descoperă proiecte · 23 noiembrie 2026
+
+Implementare pe PR #2 conform deciziilor aprobate (`docs/propunere-descopera-proiecte.md`). Migrare nouă: `20261123000000_discover_projects.sql` (doar o funcție de citire). Ghid: `docs/etapa-4-descopera-proiecte.md`.
+
+### Executate și trecute — LOCAL (fără buildit-dev)
+
+| Comandă | Rezultat |
+|---|---|
+| `npm run lint` | 0 erori |
+| `npm run build` | reușit |
+| `npm test` | 65/65 unitare (3 noi); 63 + 614 verificări de randare (71 noi) |
+| `npm run test:db` | 217/217 (38 noi), Postgres 16 local UTF-8, cu expunerea automată dezactivată și activată |
+| `npm run test:e2e` | 35/35 pași (3 noi) la 390 px și 1366 px, cu server Supabase **simulat** |
+
+**Baza de date (38):** funcția rulează cu drepturile apelantului și doar citește; vizitatorul este refuzat; rezultatul nu conține câmpuri private; doar proiecte publicate (fără ciorne, inclusiv cele 20 ale unui alt cont); ordinea cele mai recente întâi; numele proprietarului; investiția publică doar la proiectele care caută investiție; text cu majuscule, fără diacritice, în descriere, `%` tratat ca text; „ce caută” (oricare dintre cele alese, listă goală = fără filtru); industrie; stadiu (necunoscut → fără rezultate, fără eroare); oraș cu și fără Remote (și fără diacritice); plafon: doar proiecte care caută investiție, sume ≤ plafon, „de stabilit” exclusă implicit și inclusă la cerere, 0 rămâne 0 și este inclus de plafonul 0, fără plafon „de stabilit” apare normal; paginare fără dubluri și limite 1–50; proprietarul își vede ciorna prin RLS, dar proiectele proprii (publicate și ciornă) nu apar; un Creator fără proiecte publicate poate explora.
+
+**Unitare și randare:** valorile implicite pe rol; debifarea „Investiție” golește plafonul și opțiunea pentru sumele necunoscute; golirea orașului/plafonului resetează opțiunile ascunse; parametrii trimiși (plafon doar pentru Investitor cu „Investiție”, „de stabilit” doar cu plafon, 0 rămâne 0); propriile proiecte și câmpurile neașteptate eliminate în client; fotografiile proprietarilor semnate într-un singur apel; carduri (investiție doar când e căutată, 0 EUR, „de stabilit”), fără acțiuni nefuncționale sau date private; plafonul și explicația doar pentru Investitor cu „Investiție”; opțiunile Remote / „de stabilit” vizibile doar cu oraș / plafon; stările goale pe rol, eroare, paginare; comutatorul „Oameni · Proiecte”; „Descoperă” în meniul Investitorului.
+
+**Browser (3 pași noi, server simulat):** Creator → Match → Proiecte: proiectele publicate ale altora, fără cele proprii sau ciorne, ordine, investiție doar când e căutată, „Arată mai multe”; filtre (text, Investiție, oraș fără Remote), „Vezi proiectul” și „Înapoi” cu filtrele păstrate, comutatorul Oameni · Proiecte; Investitor → Descoperă: „Investiție” preselectat, plafon 50.000 (fără „de stabilit”, 0 inclus), opțiunea de includere, plafon 49.999, debifarea „Investiție” golește plafonul și opțiunea, fără rezultate la text inexistent. Capturile pe telefon și laptop au fost verificate vizual.
+
+### Pregătite, încă nerulate pe buildit-dev
+
+- Aplicarea migrării și interogarea de verificare (așteptat: `discover_projects, false, true, false, true`).
+- `verifica-buildit-dev`: 23 de verificări noi **doar de citire** (vizitator refuzat; pentru A, B și C: funcția răspunde, fără proiecte proprii, doar câmpuri publice, doar proiecte publicate, investiția doar când e căutată, limită și paginare, plafon și „de stabilit”; ciorna temporară a lui A nu apare în descoperire). Verificate doar pe un server simulat.
+- Verificarea manuală pe Vercel Preview (pașii din ghid).
+
+### Decizie rămasă
+
+- Suma 0 EUR la proiectele care caută investiție: comportamentul existent se păstrează („Investiție căutată: 0 EUR”; 0 nu devine „Investiție de stabilit”); o eventuală validare la publicare rămâne de decis separat.

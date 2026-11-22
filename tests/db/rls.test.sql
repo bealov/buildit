@@ -422,6 +422,90 @@ select t.expect_error('A: al 21-lea proiect este refuzat', $$select * from publi
 reset role;
 
 -- ---------------------------------------------------------------------------
+-- 10. Descoperă proiecte (public.discover_projects)
+-- ---------------------------------------------------------------------------
+-- Proiecte pregătite ca administrator (F, G și I sunt Creatori; A are 20 de ciorne din secțiunea 9).
+insert into public.projects (id, owner_id, status, title, summary, industry, stage, city, is_remote, looking_for) values
+  ('a0000000-0000-4000-8000-000000000001', :'F', 'published', 'Cafenea de cartier', 'Cafenea cu specific local și evenimente.', 'Retail', 'idee', 'Cluj-Napoca', false, array['colegi']),
+  ('a0000000-0000-4000-8000-000000000002', :'F', 'published', 'Platformă educațională', 'Cursuri online pentru liceeni.', 'IT & Tech', 'in_dezvoltare', '', true, array['investitie', 'colegi']),
+  ('a0000000-0000-4000-8000-000000000003', :'G', 'published', 'Atelier de mobilier', 'Mobilier din lemn reciclat.', 'Producție', 'lansat', 'Iași', true, array['investitie']),
+  ('a0000000-0000-4000-8000-000000000004', :'G', 'published', 'Grădină urbană', 'Legume pe acoperișuri.', 'Agricultură', 'idee', 'Brașov', false, array['investitie']),
+  ('a0000000-0000-4000-8000-000000000005', :'F', 'draft', 'Ciornă ascunsă', 'Nu trebuie să apară.', 'Retail', 'idee', 'Cluj', false, array['colegi']),
+  ('a0000000-0000-4000-8000-000000000006', :'I', 'published', 'Proiect al lui I', 'Caută parteneri.', 'Servicii', 'idee', 'Timișoara', false, array['parteneri']);
+insert into public.project_private (project_id, investment_amount, unknown_financials, monthly_revenue, plan_links) values
+  ('a0000000-0000-4000-8000-000000000001', 9999, '{}', 123, array['https://secret.example/1']),
+  ('a0000000-0000-4000-8000-000000000002', 50000, '{}', 456, '{}'),
+  ('a0000000-0000-4000-8000-000000000003', 70000, array['investment_amount'], null, '{}'),
+  ('a0000000-0000-4000-8000-000000000004', 0, '{}', null, '{}'),
+  ('a0000000-0000-4000-8000-000000000005', 100, '{}', null, '{}'),
+  ('a0000000-0000-4000-8000-000000000006', null, '{}', null, '{}');
+update public.projects set published_at = case id
+  when 'a0000000-0000-4000-8000-000000000001' then '2026-11-20T10:00:00Z'::timestamptz
+  when 'a0000000-0000-4000-8000-000000000002' then '2026-11-21T10:00:00Z'::timestamptz
+  when 'a0000000-0000-4000-8000-000000000003' then '2026-11-22T10:00:00Z'::timestamptz
+  when 'a0000000-0000-4000-8000-000000000004' then '2026-11-19T10:00:00Z'::timestamptz
+  when 'a0000000-0000-4000-8000-000000000006' then '2026-11-18T10:00:00Z'::timestamptz else published_at end
+ where id::text like 'a0000000-%';
+
+select t.expect_true('discover_projects: rulează cu drepturile apelantului și doar citește', $$select not prosecdef and provolatile = 's' from pg_proc where proname = 'discover_projects'$$);
+select t.expect_true('discover_projects: anon nu o poate apela', $$select not has_function_privilege('anon', 'public.discover_projects(text, text[], text, text, text, boolean, numeric, boolean, timestamptz, uuid, integer)', 'execute')$$);
+select t.expect_true('discover_projects: rezultatul nu conține câmpuri private', $$select pg_get_function_result(oid) !~* '(investment_amount|monthly_revenue|fixed_costs|variable_costs|initial_investment|unit_price|unit_cost|unknown_financials|plan_links|email|link)' from pg_proc where proname = 'discover_projects'$$);
+select t.expect_true('discover_projects: suma 0 rămâne 0 (nu devine necunoscută)', $$select investment_public = 0 from public.projects where id = 'a0000000-0000-4000-8000-000000000004'$$);
+
+set role anon;
+select set_config('request.jwt.claims', '{"role":"anon"}', false);
+select t.expect_error('discover_projects: vizitatorul este refuzat', 'select * from public.discover_projects()', array['42501']);
+reset role;
+
+-- B (Investitor, fără proiecte proprii)
+set role authenticated;
+select set_config('request.jwt.claims', '{"sub":"22222222-2222-2222-2222-222222222222","role":"authenticated"}', false);
+select t.expect_rows('B: vede doar proiectele publicate (fără ciorne, inclusiv cele 20 ale lui A)', 'select 1 from public.discover_projects(p_limit => 50)', 5);
+select t.expect_rows('B: ciorna lui F nu apare', $$select 1 from public.discover_projects(p_limit => 50) where id = 'a0000000-0000-4000-8000-000000000005'$$, 0);
+select t.expect_rows('B: ordinea — cele mai recent publicate întâi', $$select 1 from (select id, row_number() over () n from public.discover_projects()) q where (n = 1 and id = 'a0000000-0000-4000-8000-000000000003') or (n = 2 and id = 'a0000000-0000-4000-8000-000000000002') or (n = 3 and id = 'a0000000-0000-4000-8000-000000000001') or (n = 4 and id = 'a0000000-0000-4000-8000-000000000004') or (n = 5 and id = 'a0000000-0000-4000-8000-000000000006')$$, 5);
+select t.expect_rows('B: numele proprietarului este inclus', $$select 1 from public.discover_projects() where id = 'a0000000-0000-4000-8000-000000000001' and owner_name = 'Flavia Dev'$$, 1);
+select t.expect_rows('B: investiția publică doar la proiectele care caută investiție', $$select 1 from public.discover_projects() where investment_public is not null and not ('investitie' = any (looking_for))$$, 0);
+select t.expect_rows('text: „CAFENEA” (majuscule)', $$select 1 from public.discover_projects(p_search => 'CAFENEA')$$, 1);
+select t.expect_rows('text: fără diacritice („gradina” găsește „Grădină”)', $$select 1 from public.discover_projects(p_search => 'gradina urbana')$$, 1);
+select t.expect_rows('text: caută și în descriere („liceeni”)', $$select 1 from public.discover_projects(p_search => 'liceeni')$$, 1);
+select t.expect_rows('text: „%” este tratat ca text', $$select 1 from public.discover_projects(p_search => '%')$$, 0);
+select t.expect_rows('ce caută: Colegi → 2', $$select 1 from public.discover_projects(p_looking_for => array['colegi'])$$, 2);
+select t.expect_rows('ce caută: Investiție → 3', $$select 1 from public.discover_projects(p_looking_for => array['investitie'])$$, 3);
+select t.expect_rows('ce caută: Colegi sau Parteneri → 3', $$select 1 from public.discover_projects(p_looking_for => array['colegi', 'parteneri'])$$, 3);
+select t.expect_rows('ce caută: listă goală = fără filtru', $$select 1 from public.discover_projects(p_looking_for => '{}')$$, 5);
+select t.expect_rows('industrie: Retail → 1', $$select 1 from public.discover_projects(p_industry => 'Retail')$$, 1);
+select t.expect_rows('stadiu: Deja lansat → 1', $$select 1 from public.discover_projects(p_stage => 'lansat')$$, 1);
+select t.expect_rows('stadiu necunoscut → niciun rezultat, fără eroare', $$select 1 from public.discover_projects(p_stage => 'MVP')$$, 0);
+select t.expect_rows('oraș „cluj”, fără Remote → 1', $$select 1 from public.discover_projects(p_city => 'cluj', p_include_remote => false)$$, 1);
+select t.expect_rows('oraș „cluj”, cu Remote → 3 (Cluj + cele două Remote)', $$select 1 from public.discover_projects(p_city => 'cluj', p_include_remote => true)$$, 3);
+select t.expect_rows('oraș „iasi” (fără diacritice), fără Remote → 1', $$select 1 from public.discover_projects(p_city => 'iasi', p_include_remote => false)$$, 1);
+select t.expect_rows('plafon 50000: doar proiecte care caută investiție, sume ≤ plafon; „de stabilit” exclus implicit → 2', $$select 1 from public.discover_projects(p_max_investment => 50000) where id in ('a0000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000004')$$, 2);
+select t.expect_rows('plafon 50000: nimic în plus (fără „de stabilit”, fără proiecte care nu caută investiție)', $$select 1 from public.discover_projects(p_max_investment => 50000)$$, 2);
+select t.expect_rows('plafon 50000 + „include de stabilit” → 3', $$select 1 from public.discover_projects(p_max_investment => 50000, p_include_unknown_investment => true)$$, 3);
+select t.expect_rows('plafon 49999 → doar suma 0', $$select 1 from public.discover_projects(p_max_investment => 49999) where investment_public = 0$$, 1);
+select t.expect_rows('plafon 0 → proiectul cu 0 EUR (0 nu este tratat ca necunoscut)', $$select 1 from public.discover_projects(p_max_investment => 0)$$, 1);
+select t.expect_rows('fără plafon, „de stabilit” apare normal', $$select 1 from public.discover_projects(p_looking_for => array['investitie']) where investment_public is null$$, 1);
+select t.expect_rows('„include de stabilit” fără plafon nu schimbă nimic', $$select 1 from public.discover_projects(p_include_unknown_investment => true)$$, 5);
+select t.expect_rows('paginare: limita 2', $$select 1 from public.discover_projects(p_limit => 2)$$, 2);
+select t.expect_rows('paginare: pagina următoare continuă fără dubluri', $$select 1 from public.discover_projects(p_limit => 2, p_after_published_at => '2026-11-21T10:00:00Z', p_after_id => 'a0000000-0000-4000-8000-000000000002') where id in ('a0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000004')$$, 2);
+select t.expect_rows('paginare: limita este plafonată la 50 și minimum 1', $$select 1 from public.discover_projects(p_limit => 0)$$, 1);
+reset role;
+
+-- F (Creator, proprietar a 2 proiecte publicate și o ciornă): propriile proiecte sunt excluse
+set role authenticated;
+select set_config('request.jwt.claims', '{"sub":"66666666-6666-6666-6666-666666666666","role":"authenticated"}', false);
+select t.expect_rows('F: își vede ciorna prin RLS (comportament corect)', $$select 1 from public.projects where id = 'a0000000-0000-4000-8000-000000000005'$$, 1);
+select t.expect_rows('F: propriile proiecte (publicate și ciornă) NU apar în descoperire', $$select 1 from public.discover_projects(p_limit => 50) where owner_id = '66666666-6666-6666-6666-666666666666'$$, 0);
+select t.expect_rows('F: vede proiectele publicate ale altora (G și I)', 'select 1 from public.discover_projects(p_limit => 50)', 3);
+reset role;
+
+-- A (Creator cu 20 de ciorne, fără proiecte publicate): poate explora
+set role authenticated;
+select set_config('request.jwt.claims', '{"sub":"11111111-1111-1111-1111-111111111111","role":"authenticated"}', false);
+select t.expect_rows('A: Creator fără proiecte publicate poate explora (5 ale altora)', 'select 1 from public.discover_projects(p_limit => 50)', 5);
+reset role;
+
+-- ---------------------------------------------------------------------------
 -- Rezultat
 -- ---------------------------------------------------------------------------
 \o

@@ -31,7 +31,7 @@ for(const roles of [['creator'],['investor'],['creator','investor']]){
  has(p,'Rolul Investitor nu înseamnă investitor verificat',label);
  const s=view('settings',roles);has(s,'Date private',label);has(s,'ana@test.invalid',label);has(s,'readOnly',label);
  (roles.includes('investor')?has:lacks)(s,'Buget minim',label);
- const nav=view('home',roles);has(nav,roles[0]==='investor'&&roles.length===1?'Explore':'Proiecte',`${label} navigare`);
+ const nav=view('home',roles);has(nav,roles[0]==='investor'&&roles.length===1?'<span>Descoperă</span>':'<span>Proiecte</span>',`${label} navigare`);if(roles[0]==='investor'&&roles.length===1)lacks(nav,'<span>Explore</span>',`${label} navigare`);
 }
 const market=view('market',['creator']);has(market,'independent de Match',  'market');has(market,'fără un proiect publicat','market');has(market,'Explorează în modul demo','market');
 const match=view('match',['investor']);has(match,'Nu vei putea face Match cu propriile proiecte','match');
@@ -177,5 +177,41 @@ has(view('projects',['creator']),'Se încarcă proiectele','Creator → Proiecte
 has(view('home',['creator']),'Proiectele mele','acasă: acces rapid');
 store.set('buildit-real-mode',JSON.stringify({userId:'A',role:'investor'}));
 {const h=view('projects',['creator','investor']);has(h,'Proiectele pentru conturile reale sunt în pregătire','mod Investitor neschimbat');}
+store.delete('buildit-real-mode');
+
+// ---------------------------------------------------------------------------
+// Descoperă proiecte (date simulate)
+await build({entryPoints:['src/real/DiscoverProjects.tsx'],bundle:true,platform:'node',format:'esm',packages:'external',loader:{'.css':'empty'},outfile:'tests/.render-discover-projects.mjs'});
+const DP=await import('./.render-discover-projects.mjs');
+const dflt=role=>({search:'',looking:role==='investor'?['investitie']:[],industry:'',stage:'',city:'',includeRemote:true,maxInvestment:'',includeUnknown:false});
+const card=(extra={})=>({id:'x1',title:'Cafenea de cartier',summary:'Cafenea cu specific local.',industry:'Retail',stage:'idee',city:'Cluj',is_remote:false,looking_for:['colegi'],investment_public:null,published_at:'2026-11-20T10:00:00Z',owner_id:'o1',owner_name:'Flavia Dev',owner_avatar_path:'o1/avatar.jpg',ownerAvatarUrl:'https://signed/o1',...extra});
+const dv=(role,extra={})=>html(React.createElement(DP.ProjectsDiscoverView,{role,filters:dflt(role),onFilters:noop,onReset:noop,filterError:null,atDefaults:true,status:'ready',error:null,items:[],hasMore:false,more:'idle',onMore:noop,onRetry:noop,onOpen:noop,nav:noop,onShowAll:noop,...extra}));
+const NO_ACT=['Sunt interesat','Invită','Mesaj','Like','Trimite','swipe-actions','plan_links','secret','Venit','Costuri','@'];
+{const h=dv('creator',{items:[card(),card({id:'x2',title:'Platformă',looking_for:['investitie','colegi'],investment_public:50000,is_remote:true,city:''}),card({id:'x3',title:'Atelier',looking_for:['investitie'],investment_public:null}),card({id:'x4',title:'Grădină',looking_for:['investitie'],investment_public:0})]});
+ for(const t of ['MATCH · ÎNTRE CREATORI','Descoperă proiecte','Nu ai nevoie de un proiect propriu','Caută în titlu și descriere','Ce caută proiectul','Industrie','Stadiu','Oraș','Cafenea de cartier','Cafenea cu specific local.','Idee','Retail','Cluj','Caută: Colegi','Investiție căutată: 50.000 EUR','Investiție de stabilit','Investiție căutată: 0 EUR','Remote / Online','Flavia Dev','https://signed/o1','Publicat la','Vezi proiectul','4 proiecte','Ciornele și datele financiare private nu sunt afișate'])has(h,t,'creator: listă');
+ for(const t of NO_ACT)lacks(h,t,'creator: fără acțiuni nefuncționale / date private');
+ lacks(h,'Investiție totală căutată','creator: fără plafon');
+ assert.equal((h.match(/Investiție căutată|Investiție de stabilit/g)||[]).length,3,'investiția apare doar la proiectele care caută investiție');checks++;}
+{const h=dv('investor',{items:[card({looking_for:['investitie'],investment_public:9000})]});
+ for(const t of ['PROIECTE PUBLICATE','Descoperă','Investiție totală căutată de proiect (maximum, EUR)','nu contribuția ta','50.000 EUR poate accepta mai mulți investitori','aria-pressed="true" class="active">Investiție'])has(h,t,'investitor');
+ lacks(h,'MATCH · ÎNTRE CREATORI','investitor');lacks(h,'Include și proiectele cu','opțiunea apare doar cu plafon');}
+has(dv('investor',{filters:{...dflt('investor'),maxInvestment:'50000'},atDefaults:false,items:[card()]}),'Include și proiectele cu „Investiție de stabilit”','investitor cu plafon');
+lacks(dv('investor',{filters:{...dflt('investor'),looking:[]},atDefaults:false,items:[card()]}),'Investiție totală căutată','plafon ascuns fără „Investiție”');
+has(dv('creator',{filters:{...dflt('creator'),city:'Cluj'},atDefaults:false,items:[card()]}),'Include și proiectele Remote / Online','Remote doar cu oraș');
+lacks(dv('creator',{items:[card()]}),'Include și proiectele Remote','Remote ascuns fără oraș');
+has(dv('creator',{status:'loading'}),'Se caută proiecte','încărcare');
+{const h=dv('creator',{status:'error',error:{code:'PGRST202',hint:'Aplică migrarea'}});has(h,'Cod tehnic: PGRST202','eroare');has(h,'Încearcă din nou','eroare');}
+{const h=dv('creator');has(h,'Încă nu există proiecte publicate de alți utilizatori','creator gol');has(h,'Mergi la Proiecte','creator gol');lacks(h,'Cafenea','fără proiecte fictive');}
+{const h=dv('investor');has(h,'Niciun proiect publicat nu caută investiție momentan','investitor gol (implicit)');has(h,'Arată toate proiectele publicate','investitor gol');lacks(h,'Mergi la Proiecte','investitor gol');}
+{const h=dv('creator',{filters:{...dflt('creator'),search:'zzz'},atDefaults:false});has(h,'Niciun proiect nu corespunde filtrelor','fără rezultate');has(h,'Resetează filtrele','fără rezultate');}
+has(dv('creator',{items:[card()],hasMore:true}),'Arată mai multe','paginare');
+has(dv('investor',{filters:{...dflt('investor'),maxInvestment:'1,234'},filterError:'Investiția totală căutată (maximum): folosește cel mult două zecimale.',atDefaults:false}),'cel mult două zecimale','plafon invalid');
+// Integrare: comutatorul din Match (Creator) și „Descoperă” (Investitor)
+store.set('buildit-real-mode',JSON.stringify({userId:'A',role:'creator'}));
+{const h=view('match',['creator']);has(h,'aria-label="Ce descoperi"','comutator Oameni · Proiecte');has(h,'>Oameni<','comutator');has(h,'>Proiecte<','comutator');has(h,'Descoperă oameni','implicit: Oameni');}
+{const h=view('explore',['creator']);has(h,'se descoperă din Match → Proiecte','Creator pe ruta explore');}
+store.set('buildit-real-mode',JSON.stringify({userId:'A',role:'investor'}));
+{const h=view('explore',['investor']);has(h,'Se caută proiecte','Investitor → Descoperă');lacks(h,'Explorarea proiectelor reale este în pregătire','Investitor → Descoperă');}
+{const h=view('home',['investor']);has(h,'Descoperă proiecte','acasă investitor');}
 store.delete('buildit-real-mode');
 console.log(`${checks} verificări de randare pentru conturile reale (date simulate, fără Supabase).`);

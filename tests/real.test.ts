@@ -470,3 +470,50 @@ test('projects api: private data is requested only for own projects; save is one
   await createProjectsApi(client).remove('p1');
   assert.ok(calls.some(c=>c.name==='eq'&&(c.args as {c:string;v:string}).c==='status'&&(c.args as {v:string}).v==='draft'),'ștergerea vizează doar ciorne');}
 });
+
+// ---------------------------------------------------------------------------
+// Descoperă proiecte
+import {defaultDiscoverFilters,toggleLooking,setCity,setMaxInvestment,discoverArgs,discoverFiltersProblem,createDiscoverProjectsApi,DISCOVER_PAGE} from '../src/real/projects.ts';
+
+test('discover projects: role defaults; unticking „Investiție” clears the cap and the unknown option',()=>{
+ assert.deepEqual(defaultDiscoverFilters('investor').looking,['investitie'],'Investitor: „Investiție” preselectat');
+ assert.deepEqual(defaultDiscoverFilters('creator').looking,[],'Creator: fără preselecție');
+ const f={...defaultDiscoverFilters('investor'),maxInvestment:'50000',includeUnknown:true};
+ const off=toggleLooking(f,'investitie');
+ assert.deepEqual(off.looking,[]);assert.equal(off.maxInvestment,'','plafon golit');assert.equal(off.includeUnknown,false,'opțiune resetată');
+ const other=toggleLooking(f,'colegi');assert.equal(other.maxInvestment,'50000','alte opțiuni nu ating plafonul');
+ assert.equal(setMaxInvestment(f,'').includeUnknown,false,'golirea plafonului resetează opțiunea');
+ const c=setCity({...defaultDiscoverFilters('creator'),includeRemote:false},'');assert.equal(c.includeRemote,true,'golirea orașului resetează Remote');
+ assert.ok(discoverFiltersProblem({...f,maxInvestment:'1,234'}));assert.equal(discoverFiltersProblem({...f,maxInvestment:''}),null);
+});
+
+test('discover projects: arguments — cap only for investors with „Investiție”; unknown only with a cap; 0 stays 0',()=>{
+ const inv=defaultDiscoverFilters('investor');
+ assert.deepEqual(discoverArgs('investor',inv,null,13),{p_search:null,p_looking_for:['investitie'],p_industry:null,p_stage:null,p_city:null,p_include_remote:true,p_max_investment:null,p_include_unknown_investment:false,p_after_published_at:null,p_after_id:null,p_limit:13});
+ assert.equal(discoverArgs('investor',{...inv,maxInvestment:'50000,5',includeUnknown:true},null,13).p_max_investment,'50000.5');
+ assert.equal(discoverArgs('investor',{...inv,maxInvestment:'50000',includeUnknown:true},null,13).p_include_unknown_investment,true);
+ assert.equal(discoverArgs('investor',{...inv,maxInvestment:'',includeUnknown:true},null,13).p_include_unknown_investment,false,'fără plafon, opțiunea nu se trimite');
+ assert.equal(discoverArgs('investor',{...inv,maxInvestment:'0'},null,13).p_max_investment,'0','0 rămâne 0');
+ assert.equal(discoverArgs('investor',{...inv,looking:[],maxInvestment:'500'},null,13).p_max_investment,null,'fără „Investiție”, plafonul nu se aplică');
+ assert.equal(discoverArgs('creator',{...defaultDiscoverFilters('creator'),looking:['investitie'],maxInvestment:'500'},null,13).p_max_investment,null,'Creator: fără plafon');
+ assert.equal(discoverArgs('creator',{...defaultDiscoverFilters('creator'),industry:'Inexistentă',stage:'MVP'},null,13).p_industry,null);
+ assert.equal(discoverArgs('creator',{...defaultDiscoverFilters('creator'),stage:'MVP'},null,13).p_stage,null);
+ assert.deepEqual(discoverArgs('creator',{...defaultDiscoverFilters('creator'),looking:['investitie','colegi']},null,13).p_looking_for,['colegi','investitie']);
+ const city=discoverArgs('creator',{...defaultDiscoverFilters('creator'),city:'  Cluj  ',includeRemote:false},{publishedAt:'t',id:'x'},13);
+ assert.equal(city.p_city,'Cluj');assert.equal(city.p_include_remote,false);assert.equal(city.p_after_id,'x');
+ assert.equal(discoverArgs('creator',{...defaultDiscoverFilters('creator'),includeRemote:false},null,13).p_include_remote,true,'fără oraș, Remote nu filtrează');
+});
+
+test('discover projects api: own projects dropped, public fields only, one signing call, cursor',async()=>{
+ const row=(i:number,extra:object={})=>({id:'p'+i,title:'T'+i,summary:'S',industry:'Retail',stage:'idee',city:'',is_remote:true,looking_for:['colegi'],investment_public:null,published_at:`2026-11-${String(10+i).padStart(2,'0')}T00:00:00Z`,owner_id:'o'+i,owner_name:'O'+i,owner_avatar_path:null,...extra});
+ const rows=[row(0,{owner_id:'me'}),...Array.from({length:DISCOVER_PAGE+1},(_,i)=>row(i+1,{owner_avatar_path:i<2?`o${i+1}/avatar.jpg`:null,plan_links:['https://secret'],investment_amount:5}))];
+ const calls:{name:string;args:unknown}[]=[];
+ const client={rpc:(name:string,args:unknown)=>{calls.push({name,args});return Promise.resolve({data:rows,error:null})},storage:{from:()=>({createSignedUrls:(paths:string[])=>{calls.push({name:'sign',args:paths});return Promise.resolve({data:paths.map(p=>({path:p,signedUrl:'u/'+p,error:null})),error:null})}})}};
+ // @ts-expect-error client simulat parțial
+ const r=await createDiscoverProjectsApi(client).discover('me','investor',defaultDiscoverFilters('investor'),null);
+ assert.equal(calls[0].name,'discover_projects');assert.equal((calls[0].args as {p_limit:number}).p_limit,DISCOVER_PAGE+1);
+ assert.ok(!r.projects.some(p=>p.owner_id==='me'),'propriile proiecte excluse');
+ assert.equal(r.projects.length,DISCOVER_PAGE);assert.ok(r.next);
+ assert.ok(r.projects.every(p=>!('plan_links' in p)&&!('investment_amount' in p)),'câmpurile neașteptate nu ajung în card');
+ assert.equal(calls.filter(c=>c.name==='sign').length,1);assert.equal(r.projects[0].ownerAvatarUrl,'u/o1/avatar.jpg');
+});

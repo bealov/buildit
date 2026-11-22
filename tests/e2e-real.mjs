@@ -140,6 +140,21 @@ const server=createServer(async(req,res)=>{
   const out=path.endsWith('save_project')?saveProject(me,body):setProjectStatus(me,body);
   return out.error?send(res,out.error.code==='PT409'?409:out.error.code==='PT422'?422:400,out.error):send(res,200,out.data);
  }
+ if(path==='/rest/v1/rpc/discover_projects'){
+  if(!me)return send(res,401,{code:'42501',message:'permission denied for function discover_projects'});
+  const b=body,fold=v=>String(v??'').toLocaleLowerCase('ro').replace(/[ăâ]/g,'a').replace(/î/g,'i').replace(/[șş]/g,'s').replace(/[țţ]/g,'t');
+  const q=fold((b.p_search??'').trim()),city=fold((b.p_city??'').trim()),look=b.p_looking_for&&b.p_looking_for.length?b.p_looking_for:null,cap=b.p_max_investment==null?null:Number(b.p_max_investment);
+  let rows=Object.values(db.projects).filter(p=>p.status==='published'&&p.owner_id!==me.id)
+   .filter(p=>!q||fold(p.title).includes(q)||fold(p.summary).includes(q))
+   .filter(p=>!look||p.looking_for.some(x=>look.includes(x)))
+   .filter(p=>!b.p_industry||p.industry===b.p_industry).filter(p=>!b.p_stage||p.stage===b.p_stage)
+   .filter(p=>!city||fold(p.city).includes(city)||(b.p_include_remote!==false&&p.is_remote))
+   .filter(p=>cap==null||(p.looking_for.includes('investitie')&&((p.investment_public!=null&&p.investment_public<=cap)||(p.investment_public==null&&b.p_include_unknown_investment))))
+   .sort((x,y)=>(y.published_at||'').localeCompare(x.published_at||'')||y.id.localeCompare(x.id));
+  if(b.p_after_published_at&&b.p_after_id)rows=rows.filter(p=>p.published_at<b.p_after_published_at||(p.published_at===b.p_after_published_at&&p.id<b.p_after_id));
+  const lim=Math.min(Math.max(Number(b.p_limit??12)||12,1),50);
+  return send(res,200,rows.slice(0,lim).map(p=>({id:p.id,title:p.title,summary:p.summary,industry:p.industry,stage:p.stage,city:p.city,is_remote:p.is_remote,looking_for:p.looking_for,investment_public:p.investment_public,published_at:p.published_at,owner_id:p.owner_id,owner_name:db.profiles[p.owner_id]?.display_name??'',owner_avatar_path:db.profiles[p.owner_id]?.avatar_path??null})));
+ }
  if(path==='/rest/v1/projects'||path==='/rest/v1/project_private'){
   if(!me)return send(res,401,{code:'42501'});
   const q=k=>(url.searchParams.get(k)||'').replace(/^eq\./,'');
@@ -283,7 +298,7 @@ try{
   assert.equal(db.profile_roles.filter(r=>r.user_id===users.A.id).length,2);
   await page.getByRole('tab',{name:'Mod Investitor'}).first().waitFor();
   assert.equal(await page.getByRole('tab',{name:'Mod Investitor'}).first().getAttribute('aria-selected'),'true');
-  await page.getByRole('button',{name:'Explore',exact:true}).waitFor();
+  await page.getByRole('button',{name:'Descoperă',exact:true}).waitFor();
   await page.getByRole('tab',{name:'Mod Creator'}).first().click();await page.getByRole('button',{name:'Proiecte',exact:true}).waitFor();
   await page.reload();await page.getByRole('button',{name:'Proiecte',exact:true}).waitFor();await shot('3-profil-ambele-roluri');
  });
@@ -314,7 +329,7 @@ try{
   await page.getByRole('radio',{name:'Investitor'}).click();await page.getByRole('button',{name:'Creează profilul'}).click();
   await page.getByRole('heading',{name:/Bună, Bogdan/}).waitFor();
   assert.equal(db.profile_roles.find(r=>r.user_id===users.B.id).role,'investor');
-  await page.getByRole('button',{name:'Explore',exact:true}).waitFor();
+  await page.getByRole('button',{name:'Descoperă',exact:true}).waitFor();
  });
  await step('modul salvat de A nu se aplică lui B',async()=>{
   await page.getByRole('button',{name:'Profil',exact:true}).last().click();
@@ -559,6 +574,71 @@ try{
   assert.ok(await page.getByRole('button',{name:'Creează un proiect'}).isDisabled());await page.getByText('Ai atins limita').waitFor();
   await shot('9-proiectele-mele');
   for(let i=0;i<20;i++){delete db.projects['seed-'+i];delete db.project_private['seed-'+i]}
+ });
+ // ---- Descoperă proiecte (server simulat; regulile reale sunt testate în test:db)
+ const DAN='dddddddd-0000-4000-8000-000000000004';
+ const seedP=(id,owner,status,extra)=>{db.projects[id]={id,owner_id:owner,status,title:id,summary:'Rezumat.',industry:'Retail',stage:'idee',city:'',is_remote:false,looking_for:['colegi'],investment_public:null,created_at:stamp(),updated_at:stamp(),published_at:status==='published'?stamp():null,...Object.fromEntries(PROJECT_TEXT.map(k=>[k,''])),...extra};db.project_private[id]={...Object.fromEntries(FIN.map(k=>[k,null])),unknown_financials:[],plan_links:['https://secret.example/plan']}};
+ const dcards=()=>page.locator('.project-discover-card');
+ const dnames=async()=>(await dcards().locator('.project-card-title').allInnerTexts());
+ const waitD=async n=>{await page.waitForFunction(k=>document.querySelectorAll('.project-discover-card').length===k&&!document.body.innerText.includes('Se caută proiecte'),n)};
+ await step('Descoperă proiecte (Creator, Match → Proiecte): proiectele publicate ale altora, fără proprii sau ciorne; investiția doar când e căutată',async()=>{
+  seedP('dp-cafenea',users.C.id,'published',{title:'Cafenea de cartier',summary:'Cafenea cu specific local.',city:'Cluj-Napoca',published_at:'2026-11-22T12:00:00.000+00:00'});
+  seedP('dp-platforma',users.C.id,'published',{title:'Platformă educațională',industry:'IT & Tech',stage:'in_dezvoltare',is_remote:true,looking_for:['colegi','investitie'],investment_public:50000,published_at:'2026-11-22T11:00:00.000+00:00'});
+  seedP('dp-atelier',users.C.id,'published',{title:'Atelier de mobilier',industry:'Producție',stage:'lansat',city:'Iași',looking_for:['investitie'],investment_public:null,published_at:'2026-11-22T10:00:00.000+00:00'});
+  seedP('dp-gradina',users.C.id,'published',{title:'Grădină urbană',industry:'Agricultură',city:'Brașov',looking_for:['investitie'],investment_public:0,published_at:'2026-11-22T09:00:00.000+00:00'});
+  for(let i=0;i<9;i++)seedP('dp-filler-'+i,DAN,'published',{title:'Proiect Dan '+(i+1),published_at:`2026-11-0${i+1}T09:00:00.000+00:00`});
+  seedP('dp-ana-public',users.A.id,'published',{title:'Proiectul publicat al Anei',published_at:'2026-11-22T13:00:00.000+00:00'});
+  seedP('dp-ana-ciorna',users.A.id,'draft',{title:'Ciorna Anei'});
+  seedP('dp-cora-ciorna',users.C.id,'draft',{title:'Ciorna Corei'});
+  await page.getByRole('button',{name:'Match',exact:true}).click();
+  await page.getByRole('tablist',{name:'Ce descoperi'}).getByRole('tab',{name:'Proiecte'}).click();
+  await waitD(12);
+  const first=await dnames();assert.equal(first[0],'Cafenea de cartier','cele mai recent publicate întâi');
+  for(const n of ['Proiectul publicat al Anei','Ciorna Anei','Ciorna Corei'])assert.ok(!first.includes(n),'exclus: '+n);
+  const t=await page.locator('main').innerText();
+  for(const sx of ['Investiție căutată: 50.000 EUR','Investiție de stabilit','Investiție căutată: 0 EUR','Cora Pop','Vezi proiectul'])assert.ok(t.includes(sx),sx);
+  for(const sx of ['secret.example','Investiție totală căutată','Sunt interesat','@test.invalid'])assert.ok(!t.includes(sx),'ascuns: '+sx);
+  assert.equal(await dcards().filter({hasText:'Cafenea de cartier'}).getByText(/Investiție/).count(),0,'fără investiție la proiectul care caută doar colegi');
+  await page.getByRole('button',{name:'Arată mai multe'}).click();await waitD(13);
+  await shot('12-descopera-proiecte-creator');
+ });
+ await step('Descoperă proiecte (Creator): filtre, deschiderea proiectului și revenirea cu filtrele păstrate; comutatorul Oameni · Proiecte',async()=>{
+  await page.getByLabel('Caută în titlu și descriere').fill('CAFENEA');await waitD(1);assert.deepEqual(await dnames(),['Cafenea de cartier']);
+  await page.getByLabel('Caută în titlu și descriere').fill('');await waitD(12);
+  await page.getByRole('button',{name:'Investiție',exact:true}).click();await waitD(3);
+  assert.equal(await page.getByText('Investiție totală căutată').count(),0,'Creator: fără plafon');
+  await page.getByRole('button',{name:'Resetează filtrele'}).click();await waitD(12);
+  await page.getByLabel('Oraș').fill('iasi');await waitD(2);
+  await page.getByLabel('Include și proiectele Remote / Online').uncheck();await waitD(1);assert.deepEqual(await dnames(),['Atelier de mobilier']);
+  await dcards().first().getByRole('button',{name:/Vezi proiectul/}).click();
+  await page.getByRole('heading',{name:'Atelier de mobilier'}).waitFor();
+  const t=await page.locator('main').innerText();assert.ok(t.includes('Investiție de stabilit')&&!t.includes('secret.example')&&!t.includes('Editează proiectul'));
+  await page.getByRole('button',{name:'Înapoi'}).click();await waitD(1);
+  assert.equal(await page.getByLabel('Oraș').inputValue(),'iasi','filtrele rămân');
+  await page.getByRole('tablist',{name:'Ce descoperi'}).getByRole('tab',{name:'Oameni'}).click();await page.getByRole('heading',{name:'Descoperă oameni'}).waitFor();
+  await page.getByRole('tablist',{name:'Ce descoperi'}).getByRole('tab',{name:'Proiecte'}).last().click();await waitD(1);
+  await page.getByRole('button',{name:'Resetează filtrele'}).click();await waitD(12);
+ });
+ await step('Descoperă (Investitor): „Investiție” preselectat; plafonul exclude „de stabilit” implicit; debifarea golește plafonul',async()=>{
+  await page.getByRole('button',{name:/Cont real · Ana/}).click();await page.getByRole('button',{name:'Ieși din cont'}).click();await page.getByText('Te-ai deconectat.').waitFor();
+  await login(users.B);await page.getByRole('heading',{name:/Bună, Bogdan/}).waitFor();
+  await page.getByRole('button',{name:'Descoperă',exact:true}).click();await waitD(3);
+  assert.equal(await page.getByRole('button',{name:'Investiție',exact:true}).getAttribute('aria-pressed'),'true');
+  assert.deepEqual((await dnames()).sort(),['Atelier de mobilier','Grădină urbană','Platformă educațională']);
+  await page.getByText('nu contribuția ta').waitFor();
+  await page.getByLabel('Investiție totală căutată de proiect (maximum, EUR)').fill('50000');await waitD(2);
+  assert.deepEqual((await dnames()).sort(),['Grădină urbană','Platformă educațională'],'„de stabilit” exclus implicit; 0 rămâne inclus');
+  await page.getByLabel('Include și proiectele cu „Investiție de stabilit”').check();await waitD(3);
+  await page.getByLabel('Investiție totală căutată de proiect (maximum, EUR)').fill('49999');await page.waitForTimeout(500);await waitD(2);
+  assert.deepEqual((await dnames()).sort(),['Atelier de mobilier','Grădină urbană']);
+  await shot('13-descopera-investitor');
+  await page.getByRole('button',{name:'Investiție',exact:true}).click();await waitD(12);
+  assert.equal(await page.getByLabel('Investiție totală căutată de proiect (maximum, EUR)').count(),0,'plafonul dispare');
+  await page.getByRole('button',{name:'Investiție',exact:true}).click();await waitD(3);
+  assert.equal(await page.getByLabel('Investiție totală căutată de proiect (maximum, EUR)').inputValue(),'','plafonul a fost golit');
+  assert.equal(await page.getByLabel('Include și proiectele cu „Investiție de stabilit”').count(),0,'opțiunea a fost resetată și ascunsă');
+  await page.getByLabel('Caută în titlu și descriere').fill('zzz');await page.getByText('Niciun proiect nu corespunde filtrelor').waitFor();
+  for(const id of Object.keys(db.projects).filter(k=>k.startsWith('dp-'))){delete db.projects[id];delete db.project_private[id]}
  });
  await step('link expirat: mesaj clar, fără rută stricată',async()=>{
   await page.goto(`${ORIGIN}/?error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid#home`);

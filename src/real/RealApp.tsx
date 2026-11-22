@@ -17,17 +17,19 @@ import type {PeopleApi} from './people.ts';
 import {DiscoverPeople,PersonProfile} from './DiscoverPeople';
 import type {ProjectsApi} from './projects.ts';
 import {MyProjects,ProjectEditor,ProjectPage} from './ProjectPages';
+import {DiscoverProjects} from './DiscoverProjects';
+import type {DiscoverProjectsApi} from './projects.ts';
 
-export type RealDeps={auth:AuthApi;account:AccountApi;people:PeopleApi;projects:ProjectsApi};
+export type RealDeps={auth:AuthApi;account:AccountApi;people:PeopleApi;projects:ProjectsApi;discoverProjects:DiscoverProjectsApi};
 type Banner={kind:'ok'|'error';text:string}|null;
 const storage=()=>typeof window==='undefined'?undefined:window.localStorage;
 const errCode=(e:unknown)=>(e as AuthError|null)?.code;
 const errStatus=(e:unknown)=>(e as AuthError|null)?.status;
 
 async function loadDeps(config:RealConfig):Promise<RealDeps>{
- const [{getClient},{createAuthApi},{createAccountApi},{createPeopleApi},{createProjectsApi}]=await Promise.all([import('./client.ts'),import('./auth.ts'),import('./account.ts'),import('./people.ts'),import('./projects.ts')]);
+ const [{getClient},{createAuthApi},{createAccountApi},{createPeopleApi},{createProjectsApi,createDiscoverProjectsApi}]=await Promise.all([import('./client.ts'),import('./auth.ts'),import('./account.ts'),import('./people.ts'),import('./projects.ts')]);
  const client=await getClient(config);
- return {auth:createAuthApi(client),account:createAccountApi(client),people:createPeopleApi(client),projects:createProjectsApi(client)};
+ return {auth:createAuthApi(client),account:createAccountApi(client),people:createPeopleApi(client),projects:createProjectsApi(client),discoverProjects:createDiscoverProjectsApi(client)};
 }
 
 function routeFromHash(){const h=typeof location==='undefined'?'':location.hash;return isAuthHash(h)?'home':h.slice(1)||'home'}
@@ -188,12 +190,17 @@ export function AccountView({user,deps,route,nav,openDemo,recovery,endRecovery,b
  const notify=(text:string)=>{setToast(text);clearBanner()};
  // Match · Descoperă oameni: doar în modul Creator; lista rămâne montată când se deschide un profil.
  const creatorMode=mode==='creator'&&roles.includes('creator');
- const matchSeen=React.useRef(false);
- if(route==='match'&&creatorMode)matchSeen.current=true;
+ const investorMode=mode==='investor'&&roles.includes('investor');
+ // Match (Creator): comutator „Oameni · Proiecte”; Descoperă (Investitor): proiecte. Listele rămân montate între navigări.
+ const [matchView,setMatchView]=useState<'people'|'projects'>('people');
+ const matchSeen=React.useRef(false),projectsSeen=React.useRef(false),exploreSeen=React.useRef(false);
+ if(route==='match'&&creatorMode){if(matchView==='people')matchSeen.current=true;else projectsSeen.current=true}
+ if(route==='explore'&&investorMode)exploreSeen.current=true;
+ const switcher=<div className="segmented match-tabs" role="tablist" aria-label="Ce descoperi">{([['people','Oameni'],['projects','Proiecte']] as const).map(([id,label])=><button key={id} role="tab" aria-selected={matchView===id} className={matchView===id?'active':''} onClick={()=>setMatchView(id)}>{label}</button>)}</div>;
 
  const header=<><button className="demo-pill" onClick={()=>setModal('account')}><i/> Cont real{profile?' · '+first:''}</button>{profile&&<button className="avatar" aria-label="Profil" onClick={()=>nav('profile')}><Avatar profile={person}/></button>}</>;
- const navItems=[['home',t.home,Home],[mode==='investor'?'explore':'projects',mode==='investor'?t.explore:t.projects,mode==='investor'?Compass:Layers],['match',t.match,Heart],['market',t.market,ShoppingBag],['ranking','Clasament',Trophy],['profile',t.profile,User]] as const;
- const bottom=profile&&!recovery?<nav className="bottom-nav">{navItems.map(([r,label,Icon])=><button key={r} className={route===r||(r==='match'&&route.startsWith('people/'))||(r==='projects'&&/^project(-new|-edit\/|\/)/.test(route))?'active':''} onClick={()=>nav(r)}><Icon size={21}/><span>{label}</span></button>)}</nav>:undefined;
+ const navItems=[['home',t.home,Home],[mode==='investor'?'explore':'projects',mode==='investor'?'Descoperă':t.projects,mode==='investor'?Compass:Layers],['match',t.match,Heart],['market',t.market,ShoppingBag],['ranking','Clasament',Trophy],['profile',t.profile,User]] as const;
+ const bottom=profile&&!recovery?<nav className="bottom-nav">{navItems.map(([r,label,Icon])=><button key={r} className={route===r||(r==='match'&&route.startsWith('people/'))||(r==='projects'&&/^project(-new|-edit\/|\/)/.test(route))||(r==='explore'&&route.startsWith('project/'))?'active':''} onClick={()=>nav(r)}><Icon size={21}/><span>{label}</span></button>)}</nav>:undefined;
 
  let body:ReactNode;
  if(recovery)body=<NewPassword auth={deps.auth} done={()=>{endRecovery();notify('Parola a fost schimbată.');nav('home')}}/>;
@@ -201,14 +208,16 @@ export function AccountView({user,deps,route,nav,openDemo,recovery,endRecovery,b
  else if(status==='error'||!account)body=<Empty>Profilul nu a putut fi încărcat.{loadError&&<><br/><small>{loadError.hint}</small><br/><small>Cod tehnic: {loadError.code}</small></>}<Button onClick={()=>void reload()}>Încearcă din nou</Button><Button secondary onClick={signOut}>Ieși din cont</Button></Empty>;
  else if(!profile)body=<CompleteProfile account={deps.account} done={async()=>{await reload();notify('Profil creat.');nav('home')}} signOut={signOut}/>;
  else if(route==='home')body=<><Heading title={`Bună, ${first} 👋`} eyebrow={mode==='investor'?'O NOUĂ ZI. NOI POSIBILITĂȚI.':'SPAȚIUL TĂU DE CREȘTERE'}/><p className="intro">Contul tău real este activ. Profilul și rolurile sunt salvate în siguranță, separat de datele demo.</p>
-  <div className="notice">Cont real: profil, fotografie, roluri și setări.{creatorMode?' În modul Creator: „Proiectele mele” (ciorne private și proiecte publicate) și Match → „Descoperă oameni”.':''} Descoperirea proiectelor, cererile de colaborare, Marketplace-ul și clasamentul pentru conturile reale urmează. Până atunci le poți explora în modul demo, cu date fictive.</div>
-  <div className="quick-grid">{creatorMode&&<Quick name="Proiectele mele" icon={<Layers size={20}/>} onClick={()=>nav('projects')}/>}{creatorMode&&<Quick name="Descoperă oameni" icon={<Heart size={20}/>} onClick={()=>nav('match')}/>}<Quick name="Profilul tău" icon={<User size={20}/>} onClick={()=>nav('profile')}/><Quick name="Editează profilul" icon={<SlidersHorizontal size={20}/>} onClick={()=>nav('settings')}/><Quick name="Explorează demo-ul" icon={<Sparkles size={20}/>} onClick={()=>openDemo('home')}/></div></>;
+  <div className="notice">Cont real: profil, fotografie, roluri și setări.{creatorMode?' În modul Creator: „Proiectele mele” (ciorne private și proiecte publicate) și Match → oameni și proiecte de descoperit.':investorMode?' În modul Investitor: „Descoperă” arată proiectele publicate.':''} Cererile de colaborare, interesul investitorilor, Marketplace-ul și clasamentul pentru conturile reale urmează. Până atunci le poți explora în modul demo, cu date fictive.</div>
+  <div className="quick-grid">{creatorMode&&<Quick name="Proiectele mele" icon={<Layers size={20}/>} onClick={()=>nav('projects')}/>}{creatorMode&&<Quick name="Descoperă oameni" icon={<Heart size={20}/>} onClick={()=>{setMatchView('people');nav('match')}}/>}{creatorMode&&<Quick name="Descoperă proiecte" icon={<Compass size={20}/>} onClick={()=>{setMatchView('projects');nav('match')}}/>}{investorMode&&<Quick name="Descoperă proiecte" icon={<Compass size={20}/>} onClick={()=>nav('explore')}/>}<Quick name="Profilul tău" icon={<User size={20}/>} onClick={()=>nav('profile')}/><Quick name="Editează profilul" icon={<SlidersHorizontal size={20}/>} onClick={()=>nav('settings')}/><Quick name="Explorează demo-ul" icon={<Sparkles size={20}/>} onClick={()=>openDemo('home')}/></div></>;
  else if(route==='profile')body=<><Heading title={'Oamenii fac\ndiferența.'} eyebrow="PROFILUL TĂU"/><div className="profile-card panel"><div className="large-avatar"><Avatar profile={person}/></div><h2>{profile.display_name}</h2>{roles.map(r=><span className="tag" key={r}>{roleLabel[r]}</span>)} <span className="tag">Cont real</span><p>{profile.bio||'Adaugă o descriere profesională din Setări.'}</p>{roles.includes('creator')&&<ParticipationSummary value={storedParticipation(profile)}/>}{(profile.city||profile.company)&&<small>{[profile.city,profile.company].filter(Boolean).join(' · ')}</small>}</div>
   <div className="quick-grid"><Quick name="Editează profilul" icon={<User size={20}/>} onClick={()=>nav('settings')}/><Quick name="Preferințe și contact" icon={<SlidersHorizontal size={20}/>} onClick={()=>nav('settings')}/></div>
   <RolesPanel both={both} mode={mode} missing={missing} setMode={setMode} askActivate={()=>setModal('role')}/>
   <button className="settings-row" onClick={()=>openDemo('home')}>Deschide modul demo <ArrowUpRight size={18}/></button><button className="settings-row" onClick={signOut}><LogOut size={18}/> Ieși din cont</button></>;
  else if(route==='settings')body=<><Heading title="Profil și preferințe" eyebrow={mode==='investor'?'CONT INVESTITOR':'CONT CREATOR'}/><ProfileSettings user={user} account={account} api={deps.account} investor={roles.includes('investor')} creator={roles.includes('creator')} saved={async()=>{await reload();notify('Profil și preferințe salvate.');nav('profile')}} photoSaved={()=>{notify('Fotografia de profil a fost salvată.');void reload(true)}}/><RolesPanel both={both} mode={mode} missing={missing} setMode={setMode} askActivate={()=>setModal('role')}/></>;
  else if(route==='match'&&creatorMode)body=null; // afișată mai jos, păstrată între navigări
+ else if(route==='explore'&&investorMode)body=null; // idem
+ else if(route==='explore'&&creatorMode)body=<Empty>În modul Creator, proiectele publicate se descoperă din Match → Proiecte.<Button onClick={()=>{setMatchView('projects');nav('match')}}>Mergi la Match → Proiecte</Button></Empty>;
  else if(route==='projects'&&creatorMode)body=<MyProjects key={user.id} api={deps.projects} userId={user.id} nav={nav}/>;
  else if(route==='project-new'&&creatorMode)body=<ProjectEditor key="project-new" api={deps.projects} userId={user.id} id={null} nav={nav} notify={notify}/>;
  else if(route.startsWith('project-edit/')&&creatorMode)body=<ProjectEditor key={route} api={deps.projects} userId={user.id} id={route.slice('project-edit/'.length)} nav={nav} notify={notify}/>;
@@ -219,7 +228,9 @@ export function AccountView({user,deps,route,nav,openDemo,recovery,endRecovery,b
  return <Shell header={header} nav={bottom}>
   {!['home','profile','projects','explore','match','market','ranking'].includes(route)&&!recovery&&<button className="back" onClick={()=>history.length>1?history.back():nav('home')}><ChevronLeft size={16}/> Înapoi</button>}
   <Notice banner={banner}/>
-  {creatorMode&&profile&&status==='ready'&&!recovery&&matchSeen.current&&<div hidden={route!=='match'}><DiscoverPeople api={deps.people} selfId={user.id} open={id=>nav('people/'+id)} visible={route==='match'}/></div>}
+  {creatorMode&&profile&&status==='ready'&&!recovery&&matchSeen.current&&<div hidden={route!=='match'||matchView!=='people'}><DiscoverPeople api={deps.people} selfId={user.id} open={id=>nav('people/'+id)} visible={route==='match'&&matchView==='people'} switcher={switcher}/></div>}
+  {creatorMode&&profile&&status==='ready'&&!recovery&&projectsSeen.current&&<div hidden={route!=='match'||matchView!=='projects'}><DiscoverProjects api={deps.discoverProjects} selfId={user.id} role="creator" open={id=>nav('project/'+id)} nav={nav} visible={route==='match'&&matchView==='projects'} switcher={switcher}/></div>}
+  {investorMode&&profile&&status==='ready'&&!recovery&&exploreSeen.current&&<div hidden={route!=='explore'}><DiscoverProjects api={deps.discoverProjects} selfId={user.id} role="investor" open={id=>nav('project/'+id)} nav={nav} visible={route==='explore'}/></div>}
   {body}
   {toast&&<div className="toast" role="status"><Check size={18}/>{toast}</div>}
   {modal==='account'&&<Modal title="Contul tău" onClose={()=>setModal(null)}><p><strong>{profile?.display_name??'Profil necompletat'}</strong><br/><small>{user.email}</small></p>{both&&mode&&<><p className="caption">Mod de utilizare</p><ModeSwitch mode={mode} setMode={setMode}/></>}<p className="caption">Conturile demo sunt fictive și separate. Schimbarea contului demo nu afectează contul tău real.</p><Button secondary onClick={()=>{setModal(null);openDemo('home')}}>Deschide modul demo</Button><Button onClick={()=>{setModal(null);signOut()}}>Ieși din cont</Button></Modal>}

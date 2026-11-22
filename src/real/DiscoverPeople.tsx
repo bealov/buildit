@@ -1,6 +1,6 @@
 // Match · „Descoperă oameni” (conturi reale, modul Creator) și profilul public al unei persoane.
 // Doar acțiunea „Vezi profilul”: fără like, invitații sau mesaje, care nu au încă funcționalitate reală.
-import {useEffect,useRef,useState} from 'react';
+import {useEffect,useRef,useState,type ReactNode} from 'react';
 import {ArrowUpRight,RefreshCw,SlidersHorizontal} from 'lucide-react';
 import {Button,Heading,Section,Empty,Toggle} from '../ui';
 import {Avatar} from '../ProfilePhoto';
@@ -14,7 +14,7 @@ type Status='loading'|'ready'|'error';
 const MAX_CHIPS=6;
 
 /** Container: filtre, încărcare, paginare. Rămâne montat la deschiderea unui profil, ca filtrele și lista să se păstreze. */
-export function DiscoverPeople({api,selfId,open,visible=true}:{api:PeopleApi;selfId:string;open:(id:string)=>void;visible?:boolean}){
+export function DiscoverPeople({api,selfId,open,visible=true,switcher}:{api:PeopleApi;selfId:string;open:(id:string)=>void;visible?:boolean;switcher?:ReactNode}){
  const [draft,setDraft]=useState<PeopleFilters>(emptyFilters);
  const [applied,setApplied]=useState<PeopleFilters>(emptyFilters);
  const [people,setPeople]=useState<PersonCard[]>([]),[next,setNext]=useState<Cursor|null>(null);
@@ -48,14 +48,14 @@ export function DiscoverPeople({api,selfId,open,visible=true}:{api:PeopleApi;sel
  useEffect(()=>{if(!visible){scroll.current=window.scrollY;return}if(scroll.current){const y=scroll.current;requestAnimationFrame(()=>window.scrollTo(0,y))}},[visible]);
 
  const reset=()=>{const empty=emptyFilters();setDraft(empty);setApplied(empty)};
- return <PeopleView filters={draft} onFilters={setDraft} onReset={reset} filterError={problem} active={filtersActive(applied)}
+ return <PeopleView switcher={switcher} filters={draft} onFilters={setDraft} onReset={reset} filterError={problem} active={filtersActive(applied)}
   status={status} error={error} people={people} hasMore={!!next} more={more} onMore={()=>void loadMore()} onRetry={()=>void load(applied)} onOpen={open}/>;
 }
 
 /** Afișarea (fără încărcare), testabilă separat. */
-export function PeopleView({filters,onFilters,onReset,filterError,active,status,error,people,hasMore,more,onMore,onRetry,onOpen}:{
+export function PeopleView({switcher,filters,onFilters,onReset,filterError,active,status,error,people,hasMore,more,onMore,onRetry,onOpen}:{
  filters:PeopleFilters;onFilters:(f:PeopleFilters)=>void;onReset:()=>void;filterError:string|null;active:boolean;
- status:Status;error:ErrorInfo|null;people:PersonCard[];hasMore:boolean;more:'idle'|'loading'|'error';onMore:()=>void;onRetry:()=>void;onOpen:(id:string)=>void}){
+ status:Status;error:ErrorInfo|null;people:PersonCard[];hasMore:boolean;more:'idle'|'loading'|'error';onMore:()=>void;onRetry:()=>void;onOpen:(id:string)=>void;switcher?:ReactNode}){
  const set=(patch:Partial<PeopleFilters>)=>onFilters({...filters,...patch});
  const dirty=active||filtersActive(filters)||filters.includeUnknown;
  let results;
@@ -72,6 +72,7 @@ export function PeopleView({filters,onFilters,onReset,filterError,active,status,
  return <>
   <Heading eyebrow="MATCH · ÎNTRE CREATORI" title={'Împreună, ideile\npot merge mai departe.'}/>
   <p className="intro">Descoperă creatori care vor să se alăture unui proiect. Nu ai nevoie de un proiect propriu.</p>
+  {switcher}
   <Section title="Descoperă oameni"/>
   <form className="panel people-filters" onSubmit={e=>e.preventDefault()} aria-label="Filtre">
    <div className="filters-head"><SlidersHorizontal size={16}/><strong>Filtre</strong>{dirty&&<button type="button" className="text-button" onClick={onReset}>Resetează filtrele</button>}</div>

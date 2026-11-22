@@ -265,6 +265,9 @@ async function run(){
   const a=await C.c.from('projects').select('id').eq('id',pid);if(!a.error&&a.data.length)fail('ciorna este vizibilă');
   const b=await C.c.from('project_private').select('project_id').eq('project_id',pid);if(!b.error&&b.data.length)fail('datele private sunt vizibile');
  });
+ await P('ciorna temporară NU apare în Descoperă proiecte (nici pentru A, nici pentru B)',async()=>{
+  for(const u of [A,B]){const r=await u.c.rpc('discover_projects',{p_limit:50});if(r.error)fail('discover_projects: cod '+codeOf(r.error));if(r.data.some(x=>x.id===pid))fail(`ciorna apare pentru ${u.label}`)}
+ });
  await P('B NU poate salva peste proiectul lui A',async()=>{if(!(await B.c.rpc('save_project',{p_id:pid,p_expected_updated_at:pts,p_status:'draft',p_public:{title:'furat'},p_private:{}})).error)fail('operațiunea a fost PERMISĂ')});
  await P('B NU poate schimba starea proiectului lui A',async()=>{if(!(await B.c.rpc('set_project_status',{p_id:pid,p_expected_updated_at:pts,p_status:'published'})).error)fail('operațiunea a fost PERMISĂ')});
  await P('B NU poate modifica sau șterge proiectul lui A',async()=>{mustBeDenied(await B.c.from('projects').update({title:'furat'}).eq('id',pid).select('id'));mustBeDenied(await B.c.from('projects').delete().eq('id',pid).select('id'))});
@@ -284,6 +287,35 @@ async function run(){
  await P('A salvează din nou ciorna cu versiunea curentă',async()=>{const r=await A.c.rpc('save_project',{p_id:pid,p_expected_updated_at:pts,p_status:'draft',p_public:{title:'Test automat — se șterge',city:'Test'},p_private:{monthly_revenue:'0'}});if(r.error)fail('cod '+codeOf(r.error));pts=r.data[0].updated_at});
  await P('A șterge ciorna temporară (doar ID-ul creat acum)',async()=>{const r=await A.c.from('projects').delete().eq('id',pid).eq('status','draft').select('id');if(r.error||r.data.length!==1)fail('ștergerea nu a reușit');tempProject.id=null;
   const left=await A.c.from('project_private').select('project_id').eq('project_id',pid);if(left.data?.length)fail('datele private au rămas')});
+
+ // 2e. Descoperă proiecte — DOAR CITIRE, pe proiectele existente.
+ const DP_KEYS=['id','title','summary','industry','stage','city','is_remote','looking_for','investment_public','published_at','owner_id','owner_name','owner_avatar_path'];
+ await check('vizitator: nu poate apela discover_projects',async()=>{if(!(await anon.rpc('discover_projects',{})).error)fail('operațiunea a fost PERMISĂ')});
+ for(const u of [A,B,...(C?[C]:[])]){
+  let rows=null;
+  await check(`${u.label}: discover_projects răspunde (migrarea 20261123000000 este aplicată)`,async()=>{const r=await u.c.rpc('discover_projects',{p_limit:50});if(r.error)fail(codeOf(r.error)==='PGRST202'?'funcția lipsește: aplică migrarea 20261123000000_discover_projects.sql':'cod '+codeOf(r.error));rows=r.data??[]});
+  await check(`${u.label}: Descoperă proiecte nu include proiectele proprii`,async()=>{if(!rows)fail('lista nu a fost încărcată');if(rows.some(x=>x.owner_id===u.id))fail('apare un proiect propriu')});
+  await check(`${u.label}: rezultatele conțin doar câmpuri publice`,async()=>{if(!rows)fail('lista nu a fost încărcată');if(rows.some(x=>Object.keys(x).some(k=>!DP_KEYS.includes(k))))fail('câmp neașteptat')});
+  await check(`${u.label}: rezultatele sunt doar proiecte publicate`,async()=>{
+   if(!rows)fail('lista nu a fost încărcată');if(!rows.length)return 'omis';
+   const st=await u.c.from('projects').select('id,status').in('id',rows.map(x=>x.id));if(st.error)fail('cod '+codeOf(st.error));
+   if(st.data.length!==rows.length||st.data.some(x=>x.status!=='published'))fail('apare un proiect nepublicat');
+  });
+  await check(`${u.label}: investiția apare doar la proiectele care caută investiție`,async()=>{if(!rows)fail('lista nu a fost încărcată');if(rows.some(x=>x.investment_public!=null&&!x.looking_for.includes('investitie')))fail('sumă publică la un proiect care nu caută investiție')});
+  await check(`${u.label}: maximum 50 pe pagină și paginare fără dubluri`,async()=>{
+   const big=await u.c.rpc('discover_projects',{p_limit:1000});if(big.error)fail('cod '+codeOf(big.error));if(big.data.length>50)fail('peste 50');
+   const a=await u.c.rpc('discover_projects',{p_limit:1});if(a.error)fail('cod '+codeOf(a.error));if(!a.data.length)return 'omis';
+   const b=await u.c.rpc('discover_projects',{p_limit:50,p_after_published_at:a.data[0].published_at,p_after_id:a.data[0].id});if(b.error)fail('cod '+codeOf(b.error));
+   if(b.data.some(x=>x.id===a.data[0].id))fail('același proiect pe două pagini');
+  });
+  await check(`${u.label}: plafonul de investiție — doar proiecte care caută investiție; „de stabilit” doar la cerere`,async()=>{
+   const cap=await u.c.rpc('discover_projects',{p_limit:50,p_max_investment:999999999999});if(cap.error)fail('cod '+codeOf(cap.error));
+   if(cap.data.some(x=>!x.looking_for.includes('investitie')||x.investment_public==null))fail('plafonul include proiecte fără sumă sau care nu caută investiție');
+   const inc=await u.c.rpc('discover_projects',{p_limit:50,p_max_investment:999999999999,p_include_unknown_investment:true});if(inc.error)fail('cod '+codeOf(inc.error));
+   if(inc.data.some(x=>!x.looking_for.includes('investitie')))fail('apare un proiect care nu caută investiție');
+   if(!cap.data.every(x=>inc.data.some(y=>y.id===x.id)))fail('includerea sumelor necunoscute a eliminat rezultate');
+  });
+ }
 
  // 3. Roluri nepermise și operațiile proprietarului
  for(const me of [A,B]){

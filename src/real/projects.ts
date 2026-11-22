@@ -181,3 +181,75 @@ export function projectErrorMessage(code?:string|null){
  if(code==='PGRST202'||code==='42P01'||code==='PGRST205')return 'Proiectele nu sunt încă disponibile în baza de date. Aplică migrarea 20261122000000_projects.sql.';
  return 'Salvarea nu a reușit. Verifică conexiunea și încearcă din nou.';
 }
+
+// ---------------------------------------------------------------------------
+// Descoperă proiecte
+// ---------------------------------------------------------------------------
+export const DISCOVER_PAGE=12;
+export type DiscoverRole='creator'|'investor';
+export type ProjectCard={id:string;title:string;summary:string;industry:string;stage:string;city:string;is_remote:boolean;looking_for:string[];investment_public:number|null;
+ published_at:string;owner_id:string;owner_name:string;owner_avatar_path:string|null;ownerAvatarUrl?:string};
+export type DiscoverFilters={search:string;looking:LookingFor[];industry:string;stage:string;city:string;includeRemote:boolean;maxInvestment:string;includeUnknown:boolean};
+export type DiscoverCursor={publishedAt:string;id:string};
+
+/** Valorile implicite pe rol: Investitorul pornește cu „Investiție” bifat (se poate debifa). */
+export const defaultDiscoverFilters=(role:DiscoverRole):DiscoverFilters=>({search:'',looking:role==='investor'?['investitie']:[],industry:'',stage:'',city:'',includeRemote:true,maxInvestment:'',includeUnknown:false});
+export const sameFilters=(a:DiscoverFilters,b:DiscoverFilters)=>JSON.stringify(a)===JSON.stringify(b);
+
+/** Comută o opțiune „ce caută”. Debifarea „Investiție” golește plafonul și opțiunea pentru sumele necunoscute, ca să nu rămână filtre ascunse. */
+export function toggleLooking(f:DiscoverFilters,l:LookingFor):DiscoverFilters{
+ const on=f.looking.includes(l);
+ const looking=on?f.looking.filter(x=>x!==l):[...f.looking,l];
+ return l==='investitie'&&on?{...f,looking,maxInvestment:'',includeUnknown:false}:{...f,looking};
+}
+/** Golirea orașului readuce „Include Remote / Online” la valoarea implicită (opțiunea este vizibilă doar cu oraș). */
+export const setCity=(f:DiscoverFilters,city:string):DiscoverFilters=>({...f,city,includeRemote:city.trim()?f.includeRemote:true});
+/** Golirea plafonului resetează opțiunea pentru sumele necunoscute (vizibilă doar cu plafon). */
+export const setMaxInvestment=(f:DiscoverFilters,v:string):DiscoverFilters=>({...f,maxInvestment:v,includeUnknown:v.trim()?f.includeUnknown:false});
+
+export function discoverFiltersProblem(f:DiscoverFilters){
+ if(!f.maxInvestment.trim())return null;
+ const {problem}=parseAmount(f.maxInvestment);
+ return problem?`Investiția totală căutată (maximum): ${problem}.`:null;
+}
+
+/** Parametrii pentru discover_projects. Plafonul se trimite doar cu „Investiție” bifat (rol Investitor). */
+export function discoverArgs(role:DiscoverRole,f:DiscoverFilters,cursor:DiscoverCursor|null|undefined,limit:number){
+ const cap=role==='investor'&&f.looking.includes('investitie')?parseAmount(f.maxInvestment).value:null;
+ const city=f.city.replace(/\s+/g,' ').trim();
+ return {
+  p_search:f.search.replace(/\s+/g,' ').trim().slice(0,80)||null,
+  p_looking_for:f.looking.length?LOOKING_FOR.map(([id])=>id).filter(id=>f.looking.includes(id)):null,
+  p_industry:industries.includes(f.industry)?f.industry:null,
+  p_stage:STAGES.some(([id])=>id===f.stage)?f.stage:null,
+  p_city:city?city.slice(0,80):null,
+  p_include_remote:city?f.includeRemote:true,
+  p_max_investment:cap,
+  p_include_unknown_investment:cap!==null&&f.includeUnknown,
+  p_after_published_at:cursor?.publishedAt??null,p_after_id:cursor?.id??null,p_limit:limit
+ };
+}
+
+export type DiscoverProjectsApi={discover(selfId:string,role:DiscoverRole,f:DiscoverFilters,cursor?:DiscoverCursor|null):Promise<{projects:ProjectCard[];next:DiscoverCursor|null}>};
+const str=(v:unknown)=>typeof v==='string'?v:'';
+export function createDiscoverProjectsApi(client:SupabaseClient):DiscoverProjectsApi{
+ return {
+  async discover(selfId,role,f,cursor){
+   const {data,error}=await client.rpc('discover_projects',discoverArgs(role,f,cursor,DISCOVER_PAGE+1));
+   if(error)throw error;
+   const rows=((data??[]) as Record<string,unknown>[]).filter(r=>r&&r.owner_id!==selfId);
+   // Doar câmpurile publice cunoscute ajung în card.
+   const page:ProjectCard[]=rows.slice(0,DISCOVER_PAGE).map(r=>({id:str(r.id),title:str(r.title),summary:str(r.summary),industry:str(r.industry),stage:str(r.stage),city:str(r.city),is_remote:!!r.is_remote,
+    looking_for:Array.isArray(r.looking_for)?r.looking_for.filter((x):x is string=>typeof x==='string'):[],investment_public:r.investment_public==null?null:Number(r.investment_public),
+    published_at:str(r.published_at),owner_id:str(r.owner_id),owner_name:str(r.owner_name),owner_avatar_path:str(r.owner_avatar_path)===`${str(r.owner_id)}/avatar.jpg`?str(r.owner_avatar_path):null}));
+   const paths=[...new Set(page.map(p=>p.owner_avatar_path).filter((x):x is string=>!!x))];
+   if(paths.length){
+    const signed=await client.storage.from('avatars').createSignedUrls(paths,3600);
+    const urls=new Map((signed.data??[]).filter(s=>s.signedUrl&&!s.error).map(s=>[s.path,s.signedUrl]));
+    for(const p of page)if(p.owner_avatar_path)p.ownerAvatarUrl=urls.get(p.owner_avatar_path)??undefined;
+   }
+   const last=page.at(-1);
+   return {projects:page,next:rows.length>DISCOVER_PAGE&&last?{publishedAt:last.published_at,id:last.id}:null};
+  }
+ };
+}

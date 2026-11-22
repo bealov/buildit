@@ -1,7 +1,26 @@
 # Propunere · „Descoperă proiecte” (conturi reale)
 
-Stare: **propunere, neimplementată** (22 noiembrie 2026, ramura PR #2). Deciziile din secțiunea 8 au
-nevoie de acordul tău.
+Stare: **implementată pe PR #2 (23 noiembrie 2026)** cu deciziile aprobate de mai jos; ghid:
+[etapa-4-descopera-proiecte.md](etapa-4-descopera-proiecte.md).
+
+## Decizii aprobate
+
+| Decizie | Rezultat |
+|---|---|
+| Investitor: „Explore” → „Descoperă” | Da (doar conturile reale) |
+| Creator: „Oameni · Proiecte” în Match | Da |
+| Proiectele proprii | Excluse; rămân în „Proiectele mele” |
+| Investitor: „Investiție” preselectat | Da, se poate debifa |
+| Plafonul investiției | Doar Investitor; „Investiție totală căutată de proiect (maximum, EUR)” = suma totală căutată de proiect, nu contribuția individuală. Câmpul apare doar cu „Investiție” bifat; debifarea golește plafonul și resetează opțiunea pentru sumele necunoscute. Cu plafon: doar proiecte care caută investiție; „Investiție de stabilit” exclusă implicit, cu opțiune explicită de includere. Fără plafon: apar normal. |
+| Ordinea | Cele mai recent publicate întâi (republicarea readuce proiectul în față) |
+| Competențe și roluri căutate în proiect | Etapă separată, imediat după descoperire |
+| Vizibilitate și protecția datelor | Reguli existente, neschimbate |
+
+**Decizie rămasă (neimplementată):** proiectele care caută investiție pot avea suma 0 EUR, afișată „Investiție căutată: 0 EUR”. Comportamentul existent se păstrează (0 nu devine „Investiție de stabilit”); o eventuală validare la publicare rămâne de decis separat.
+
+Precizare de formulare: faptul că proprietarul își vede propriile ciorne este comportamentul corect;
+excluderea lor din „Descoperă” este o cerință a căutării.
+
 
 Scop: utilizatorii autentificați găsesc proiectele publicate direct în aplicație, fără să primească
 linkul. Prima versiune: **descoperire, filtrare și deschiderea proiectului**. Fără swipe, solicitări
@@ -121,8 +140,8 @@ pagina proiectului propriu — se poate adăuga ulterior, dacă e nevoie.
 ## 9. Implementare (după acord)
 
 - **Migrare nouă, doar o funcție de citire:** `discover_projects(...)`, cu drepturile utilizatorului
-  (RLS activ), doar pentru autentificați. Filtrează explicit `status = 'published'` — important,
-  pentru că RLS îi permite proprietarului să-și vadă propriile ciorne — și exclude `owner_id =
+  (RLS activ), doar pentru autentificați. Filtrează explicit `status = 'published'` (proprietarul își
+  vede corect ciornele prin RLS, dar descoperirea arată doar proiecte publicate) și exclude `owner_id =
   auth.uid()`. Întoarce doar coloane publice + numele și calea fotografiei proprietarului (din
   `profiles`, deja vizibile autentificaților). Fără modificări de tabele, date sau reguli.
 - **Interfață:** o componentă comună (filtre, carduri, „Arată mai multe”, stări), refolosind tiparul
